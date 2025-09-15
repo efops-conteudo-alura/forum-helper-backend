@@ -1,14 +1,12 @@
 // src/services/authService.js
-
 const puppeteer = require('puppeteer');
+const axios = require('axios');
 
 let cachedCookie = null;
-// <<< NOVA VARIÁVEL >>> 
-// Para controlar o processo de login que está em andamento.
-let loginPromise = null; 
+let loginPromise = null;
 
 async function loginAndGetCookie() {
-    console.log('🔐 Iniciando processo de login automático com Puppeteer...');
+    console.log('🔐 Iniciando login automático com Puppeteer...');
     
     const browser = await puppeteer.launch({
         headless: true,
@@ -22,51 +20,70 @@ async function loginAndGetCookie() {
         await page.type('#password', process.env.ALURA_PASSWORD);
         await page.click('button[type="submit"]');
         await page.waitForNavigation({ waitUntil: 'networkidle2' });
-        console.log('✅ Login realizado com sucesso!');
 
+        console.log('✅ Login realizado com sucesso!');
         const cookies = await page.cookies();
-        const cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         
         cachedCookie = cookieString;
         return cookieString;
 
     } catch (error) {
-        console.error('❌ Falha no processo de login com Puppeteer:', error);
-        throw new Error('Não foi possível fazer o login automático.');
+        console.error('❌ Falha no login automático:', error.message);
+        throw new Error('Não foi possível fazer login.');
     } finally {
         await browser.close();
     }
 }
 
+async function isCookieValid(cookie) {
+    try {
+        const response = await axios.get('https://cursos.alura.com.br/dashboard', {
+            headers: {
+                'Cookie': cookie,
+                'User-Agent': 'Mozilla/5.0'
+            },
+            maxRedirects: 0, // importante: não seguir redirects
+            validateStatus: status => status === 200 || status === 302
+        });
+
+        // Se for 200 e tiver algo típico do dashboard logado, está válido
+        if (response.status === 200 && response.data.includes('meus cursos')) {
+            return true;
+        }
+
+        // Se for 302 para login, ou não tiver "meus cursos", está inválido
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 async function getValidCookie() {
-    // 1. Se o cookie já existe no cache, retorne imediatamente.
+    // Se existe cookie em cache, validamos ele
     if (cachedCookie) {
-        console.log('♻️ Usando cookie de sessão em cache.');
-        return cachedCookie;
+        const valido = await isCookieValid(cachedCookie);
+        if (valido) {
+            console.log('♻️ Usando cookie válido do cache.');
+            return cachedCookie;
+        } else {
+            console.log('⚠️ Cookie expirado, fazendo novo login...');
+            cachedCookie = null;
+        }
     }
 
-    // 2. <<< NOVA LÓGICA >>> 
-    // Se um login já está em andamento, não inicie outro. Apenas espere o que está
-    // rolando terminar e retorne o resultado dele.
+    // Se já tem login em andamento, só espera
     if (loginPromise) {
-        console.log('⏳ Login já em andamento, aguardando...');
+        console.log('⏳ Login em andamento, aguardando...');
         return await loginPromise;
     }
 
-    // 3. Se não há cookie e nenhum login em andamento, esta é a primeira requisição.
-    // Inicie o processo de login.
     try {
-        // Guarda a "promessa" de login na nossa variável de controle
         loginPromise = loginAndGetCookie();
         return await loginPromise;
     } finally {
-        // 4. <<< IMPORTANTE >>>
-        // Após o término do login (sucesso ou falha), limpe a variável de controle.
-        // Isso permite que um novo login seja disparado no futuro se o cookie expirar.
         loginPromise = null;
     }
 }
 
-module.exports = {
-    getValidCookie
-};
+module.exports = { getValidCookie };
