@@ -113,7 +113,16 @@ async function fetchUserStats(username) { // Removemos o parâmetro "cookie"
     console.log(`Buscando dados de ações em: ${url}`);
     const response = await axios.get(url, { headers: { 'Cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
     const $ = cheerio.load(response.data);
-    let contadorDia = 0; let contadorMes = 0; const hoje = new Date(); const diaAtual = hoje.getDate(); const mesAtual = hoje.getMonth() + 1; const anoAtual = hoje.getFullYear();
+    const agoraSP = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+    const hoje = new Date(agoraSP);
+
+
+     let contadorDia = 0;
+    let contadorMes = 0;
+    const diaAtual = hoje.getDate();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+
     
     $('table.actions-table tbody tr').each((index, element) => {
         const actionText = $(element).find('td.actions-table-actionName').text().trim();
