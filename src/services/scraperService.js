@@ -2,7 +2,14 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
-const authService = require('./authService'); // <<< NOVA IMPORTAÇÃO >>>
+const authService = require('./authService');
+
+
+let teamStatsCache = {
+    data: null,
+    lastFetched: null,
+};
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
 
 function classifyTopic(topic) {
     const title = topic.title.toLowerCase();
@@ -27,7 +34,7 @@ function classifyTopic(topic) {
 
     // REGRA 3: Submissões de projetos, portfólios e resoluções são para Feedback e incentivo.
     const feedbackKeywords = [
-        '[projeto]', 'meu projeto', 'minha resolução', 'minha solução', 
+        '[projeto]', 'meu projeto', 'minha resolução', 'minha solução',
         'meu codigo', 'meu exercicio', 'portfolio', 'portifólio' // Adicionada grafia comum
     ];
     if (feedbackKeywords.some(keyword => title.includes(keyword))) {
@@ -36,8 +43,8 @@ function classifyTopic(topic) {
 
     // REGRA 4: Tópicos sobre conceitos avançados, abstratos ou de planejamento são Complexos.
     const advancedConceptKeywords = [
-        'arquitetura', 'performance', 'melhorar', 'estratégia', 'campanha', 
-        'gestão', 'plano', 'otimizar', 'como seria', 'qual a melhor', 
+        'arquitetura', 'performance', 'melhorar', 'estratégia', 'campanha',
+        'gestão', 'plano', 'otimizar', 'como seria', 'qual a melhor',
         'capacidade', 'kernel', 'batching', 'encapsulamento', 'parâmetros',
         'ambiente', 'sobrecarga', 'conflito', 'comportamento estranho'
     ];
@@ -103,12 +110,8 @@ async function fetchAllTopics() {
     return classifiedTopics;
 }
 
-// <<< ALTERAÇÃO AQUI >>>
-async function fetchUserStats(username) { // Removemos o parâmetro "cookie"
-    
-    // Agora, buscamos o cookie dinamicamente usando o serviço de autenticação
+async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
-
     const url = `https://cursos.alura.com.br/user/${username}/actions`;
     console.log(`Buscando dados de ações em: ${url}`);
     const response = await axios.get(url, { headers: { 'Cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
@@ -116,14 +119,12 @@ async function fetchUserStats(username) { // Removemos o parâmetro "cookie"
     const agoraSP = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
     const hoje = new Date(agoraSP);
 
-
-     let contadorDia = 0;
+    let contadorDia = 0;
     let contadorMes = 0;
     const diaAtual = hoje.getDate();
     const mesAtual = hoje.getMonth() + 1;
     const anoAtual = hoje.getFullYear();
 
-    
     $('table.actions-table tbody tr').each((index, element) => {
         const actionText = $(element).find('td.actions-table-actionName').text().trim();
         if (actionText === 'Resposta a tópico do fórum') {
@@ -162,8 +163,97 @@ async function fetchUserAvatar(username) {
     }
 }
 
+async function fetchTeamStats(usernames) {
+    const now = new Date();
+    const currentUserKey = usernames.slice().sort().join(',');
+
+    if (
+        teamStatsCache.data &&
+        teamStatsCache.lastFetched &&
+        (now - teamStatsCache.lastFetched < CACHE_DURATION_MS) &&
+        teamStatsCache.usersKey === currentUserKey
+    ) {
+        console.log("Servindo estatísticas da equipe a partir do cache (mesma equipe).");
+        return teamStatsCache.data;
+    }
+
+    console.log("Cache inválido ou equipe diferente. Buscando novos dados...");
+
+    const teamStats = [];
+    for (const username of usernames) {
+        const user = username.trim();
+        try {
+            const stats = await fetchUserStats(user);
+            teamStats.push({ username: user, postsToday: stats.postsToday, success: true });
+        } catch (error) {
+            console.error(`Falha ao buscar dados para: ${user}. Erro: ${error.message}`);
+            teamStats.push({ username: user, postsToday: 0, success: false });
+        }
+    }
+
+    teamStatsCache.data = teamStats;
+    teamStatsCache.lastFetched = new Date();
+    teamStatsCache.usersKey = currentUserKey;
+    console.log("Novas estatísticas da equipe salvas no cache.");
+
+    return teamStats;
+}
+
+
+async function fetchUserActivityDetails(username) {
+    const cookie = await authService.getValidCookie();
+    const url = `https://cursos.alura.com.br/user/${username}/actions`;
+    console.log(`Buscando detalhes de atividade para ${username} em: ${url}`);
+
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                'Cookie': cookie,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+        const $ = cheerio.load(response.data);
+
+        const activities = [];
+        const currentYear = new Date().getFullYear(); // <<< OTIMIZAÇÃO: Pega o ano atual
+
+        $('table.actions-table tbody tr').each((index, element) => {
+            const actionText = $(element).find('td.actions-table-actionName').text().trim();
+
+            if (actionText === 'Resposta a tópico do fórum') {
+                const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
+                if (actionTimestamp) {
+                    const activityDate = new Date(actionTimestamp);
+
+                    // <<< OTIMIZAÇÃO: Pára de ler o HTML se a atividade for mais antiga que o ano atual
+                    if (activityDate.getFullYear() < currentYear) {
+                        console.log(`[${username}] Atividade de ${activityDate.getFullYear()} encontrada. Parando a busca para otimizar.`);
+                        return false; // Interrompe o loop .each do Cheerio
+                    }
+
+                    activities.push({
+                        type: 'forum-response',
+                        date: actionTimestamp
+                    });
+                }
+            }
+        });
+
+        console.log(`Extraídas ${activities.length} respostas do fórum para ${username} (apenas ano atual).`);
+        return activities;
+
+    } catch (error) {
+        console.error(`Erro crítico ao buscar atividades detalhadas para ${username}:`, error.message);
+        throw new Error(`Não foi possível buscar as atividades de ${username}.`);
+    }
+}
+
+
 module.exports = {
     fetchAllTopics,
     fetchUserStats,
-    fetchUserAvatar
+    fetchUserAvatar,
+    fetchTeamStats,
+    fetchUserActivityDetails,
 };
+
