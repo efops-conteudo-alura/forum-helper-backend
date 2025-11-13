@@ -1,5 +1,3 @@
-// src/services/scraperService.js
-
 const axios = require('axios');
 const cheerio = require('cheerio');
 const authService = require('./authService');
@@ -8,65 +6,75 @@ const authService = require('./authService');
 let teamStatsCache = {
     data: null,
     lastFetched: null,
+    usersKey: null
 };
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
 
 function classifyTopic(topic) {
     const title = topic.title.toLowerCase();
 
-    // --- Firewall de Regras v5 ---
-    // A primeira regra que corresponder define a categoria. A ordem é crucial.
-
-    // REGRA 1: Erros explícitos, problemas graves ou reclamações são SEMPRE Complexos.
     const errorKeywords = [
         '[bug]', '[reclamação]', 'erro', 'não funciona', 'não consigo', 'não aparece',
-        'problema', 'exception'
+        'problema', 'exception', 'falha', 'não abre', 'não roda', 'não carrega',
+        'travando', 'crash', 'bugado', 'não compila', 'não imprime', 'não executa',
+        'message:', 'traceback', 'stack overflow'
     ];
     if (errorKeywords.some(keyword => title.includes(keyword))) {
         return 'Complexo';
     }
 
-    // REGRA 2: A palavra "Desafio" indica um problema a ser resolvido, portanto, Complexo.
-    const challengeKeywords = ['desafio'];
+    const challengeKeywords = ['tentei fazer', 'extra', 'melhoria', 'otimizar'];
     if (challengeKeywords.some(keyword => title.includes(keyword))) {
         return 'Complexo';
     }
 
-    // REGRA 3: Submissões de projetos, portfólios e resoluções são para Feedback e incentivo.
     const feedbackKeywords = [
-        '[projeto]', 'meu projeto', 'minha resolução', 'minha solução',
-        'meu codigo', 'meu exercicio', 'portfolio', 'portifólio' // Adicionada grafia comum
+        '[projeto]','[Projeto]', 'meu projeto', 'minha resolução', 'minha solução',
+        'meu codigo', 'meu exercício', 'meu exercicio', 'meu portfólio',
+        'portifólio', 'projeto final', 'projeto concluído', 'quero feedback',
+        'avaliação', 'dêem feedback', 'meu site', 'meu app', 'Desafios Finais', 'Desafio - Hora da pratica','Resolução','desafio'
     ];
     if (feedbackKeywords.some(keyword => title.includes(keyword))) {
         return 'Feedback';
     }
 
-    // REGRA 4: Tópicos sobre conceitos avançados, abstratos ou de planejamento são Complexos.
     const advancedConceptKeywords = [
-        'arquitetura', 'performance', 'melhorar', 'estratégia', 'campanha',
-        'gestão', 'plano', 'otimizar', 'como seria', 'qual a melhor',
-        'capacidade', 'kernel', 'batching', 'encapsulamento', 'parâmetros',
-        'ambiente', 'sobrecarga', 'conflito', 'comportamento estranho'
+        'arquitetura', 'performance', 'melhorar', 'estratégia', 'gestão',
+        'otimizar', 'melhor forma', 'qual a melhor', 'boas práticas',
+        'padrão de projeto', 'design pattern', 'estrutura', 'pipeline',
+        'ambiente', 'sobrecarga', 'comportamento estranho', 'variáveis de ambiente',
+        'testes automatizados', 'deploy', 'banco de dados', 'api rest',
+        'persistência', 'thread', 'assíncrono', 'async', 'await', 'kernel',
+        'hook', 'encapsulamento', 'parâmetro', 'modularização'
     ];
     if (advancedConceptKeywords.some(keyword => title.includes(keyword))) {
         return 'Complexo';
     }
 
-    // REGRA 5: Dúvidas que não caíram nas regras de complexidade são Fáceis.
     const easyKeywords = [
-        'dúvida', 'como faço', 'o que é', 'iniciante', 'primeiros passos', 'ajuda'
+        'dúvida', 'como faço', 'o que é', 'para que serve', 'iniciante',
+        'primeiros passos', 'ajuda', 'não entendi', 'explicação', 'passo a passo',
+        'erro simples', 'como começo', 'aprendendo agora', 'sou novo', 'primeira vez'
     ];
     if (easyKeywords.some(keyword => title.includes(keyword))) {
         return 'Fácil';
     }
 
-    // REGRA 6 (Padrão): Se o tópico passou por todos os firewalls, é mais seguro classificá-lo como Fácil.
     return 'Fácil';
 }
 
-async function extractTopicsFromPage(pageUrl) {
+
+async function extractTopicsFromPage(pageUrl, cookie = null) {
     try {
-        const response = await axios.get(pageUrl);
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        };
+
+        if (cookie) {
+            headers['Cookie'] = cookie;
+        }
+
+        const response = await axios.get(pageUrl, { headers });
         const $ = cheerio.load(response.data);
         const topicsList = [];
 
@@ -74,12 +82,21 @@ async function extractTopicsFromPage(pageUrl) {
             const title = $(element).find('h2.forumList-item-subject-info-title a').text().trim();
             const link = 'https://cursos.alura.com.br' + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
             const category = $(element).find('a.topic-breadCrumb-item-link').first().text().trim();
-            const daysText = $(element).find('span.forumList-item-info-updatedAt').text().trim();
-            const authorImage = $(element).find('img.forumList-item-info-avatar').attr('src');
+            const daysText = $(element).find('.forumList-item-info-updatedAt').text().trim(); 
+            
+           
+            let authorImage = $(element).find('img.forumList-item-info-avatar').attr('src');
+            const placeholderAvatar = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010';
+
+           
+            if (!authorImage || authorImage.includes('avatar_user.png')) {
+                authorImage = placeholderAvatar; // Força o uso do placeholder
+            }
+            
 
             topicsList.push({
                 title, link, category, daysText,
-                authorImage: authorImage || 'https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?'
+                authorImage: authorImage // Usa a variável tratada
             });
         });
         return topicsList;
@@ -89,14 +106,50 @@ async function extractTopicsFromPage(pageUrl) {
     }
 }
 
+async function fetchBBTopics() {
+  const bbUrl = 'https://cursos.alura.com.br/forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
+  try {
+    console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
+    const cookie = await authService.getValidCookie();
+    
+    // 1. Extrai os tópicos
+    const topics = await extractTopicsFromPage(bbUrl, cookie);
+    
+    const classifiedTopics = topics.map(topic => {
+        const priority = classifyTopic(topic);
+        return { ...topic, priority };
+    });
+
+    console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
+    return classifiedTopics; // <-- Retorna os tópicos JÁ CLASSIFICADOS
+
+  } catch (error) {
+    console.error('[Worker BB] Falha ao buscar tópicos do Banco do Brasil:', error.message);
+    return []; // Retorna lista vazia em caso de falha
+  }
+}
+
+/**
+ * <<< OTIMIZADO: Limita a busca a um número máximo de páginas para eficiência >>>
+ */
 async function fetchAllTopics() {
+    const MAX_PAGES_TO_SCRAPE = 5; // Limita a 5 páginas
     let allTopics = [];
     let page = 1;
-    while (true) {
+
+    console.log(`[Worker Geral] Iniciando busca de tópicos gerais (limite de ${MAX_PAGES_TO_SCRAPE} páginas)...`);
+
+    while (page <= MAX_PAGES_TO_SCRAPE) {
         const pageUrl = `https://cursos.alura.com.br/forum/sem-resposta/${page}`;
-        console.log(`Buscando tópicos da página ${page}...`);
-        const topicsFromPage = await extractTopicsFromPage(pageUrl);
-        if (topicsFromPage.length === 0) break;
+        console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
+        
+        const topicsFromPage = await extractTopicsFromPage(pageUrl); // Busca pública
+        
+        if (topicsFromPage.length === 0) {
+            console.log(`[Worker Geral] Página ${page} vazia. Parando a busca.`);
+            break;
+        }
+        
         allTopics = allTopics.concat(topicsFromPage);
         page++;
     }
@@ -106,9 +159,11 @@ async function fetchAllTopics() {
         return { ...topic, priority };
     });
 
-    console.log(`Busca e classificação de tópicos finalizada. Total: ${classifiedTopics.length}`);
+    console.log(`[Worker Geral] Busca e classificação de tópicos gerais finalizada. Total: ${classifiedTopics.length}`);
     return classifiedTopics;
 }
+
+// --- Funções de Stats (Originais) ---
 
 async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
@@ -152,7 +207,7 @@ async function fetchUserAvatar(username) {
         const $ = cheerio.load(response.data);
         const avatarUrl = $('.profile-header-avatar').attr('src');
         if (!avatarUrl) {
-            console.warn(`Avatar não encontrado para o usuário: ${username}`);
+            console.warn(`Avatar não encontrado para o usuÃ¡rio: ${username}`);
             return 'https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?';
         }
         console.log(`Avatar encontrado para ${username}: ${avatarUrl}`);
@@ -177,7 +232,7 @@ async function fetchTeamStats(usernames) {
         return teamStatsCache.data;
     }
 
-    console.log("Cache inválido ou equipe diferente. Buscando novos dados...");
+    console.log("Cache invállido ou equipe diferente. Buscando novos dados...");
 
     const teamStats = [];
     for (const username of usernames) {
@@ -215,17 +270,17 @@ async function fetchUserActivityDetails(username) {
         const $ = cheerio.load(response.data);
 
         const activities = [];
-        const currentYear = new Date().getFullYear(); // <<< OTIMIZAÇÃO: Pega o ano atual
+        const currentYear = new Date().getFullYear(); // Otimização: Pega o ano atual
 
         $('table.actions-table tbody tr').each((index, element) => {
             const actionText = $(element).find('td.actions-table-actionName').text().trim();
 
-            if (actionText === 'Resposta a tópico do fórum') {
+            if (actionText === 'Resposta a tópico do fólm') {
                 const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
                 if (actionTimestamp) {
                     const activityDate = new Date(actionTimestamp);
 
-                    // <<< OTIMIZAÇÃO: Pára de ler o HTML se a atividade for mais antiga que o ano atual
+                    // Otimização: Pára de ler o HTML se a atividade for mais antiga que o ano atual
                     if (activityDate.getFullYear() < currentYear) {
                         console.log(`[${username}] Atividade de ${activityDate.getFullYear()} encontrada. Parando a busca para otimizar.`);
                         return false; // Interrompe o loop .each do Cheerio
@@ -247,13 +302,12 @@ async function fetchUserActivityDetails(username) {
         throw new Error(`Não foi possível buscar as atividades de ${username}.`);
     }
 }
-
-
 module.exports = {
     fetchAllTopics,
     fetchUserStats,
     fetchUserAvatar,
     fetchTeamStats,
     fetchUserActivityDetails,
+    extractTopicsFromPage, // <--- Exportado
+    fetchBBTopics,         // <--- Exportado
 };
-
