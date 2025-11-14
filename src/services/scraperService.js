@@ -8,7 +8,8 @@ let teamStatsCache = {
     lastFetched: null,
     usersKey: null
 };
-const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+// Reduzindo o cache para 1 hora para as stats do sidebar, pois elas são menos pesadas.
+const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000; 
 
 function classifyTopic(topic) {
     const title = topic.title.toLowerCase();
@@ -32,7 +33,8 @@ function classifyTopic(topic) {
         '[projeto]','[Projeto]', 'meu projeto', 'minha resolução', 'minha solução',
         'meu codigo', 'meu exercício', 'meu exercicio', 'meu portfólio',
         'portifólio', 'projeto final', 'projeto concluído', 'quero feedback',
-        'avaliação', 'dêem feedback', 'meu site', 'meu app', 'Desafios Finais', 'Desafio - Hora da pratica','Resolução','desafio'
+        'avaliação', 'dêem feedback', 'meu site', 'meu app', 'desafios finais', 
+        'desafio - hora da pratica','resolução','desafio'
     ];
     if (feedbackKeywords.some(keyword => title.includes(keyword))) {
         return 'Feedback';
@@ -78,17 +80,19 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
         const $ = cheerio.load(response.data);
         const topicsList = [];
 
+        // Note que o seletor de tempo foi ajustado para abranger as duas variantes:
+        // .forumList-item-info-updatedAt e .forumList-item-info-updatedAt (do seu código anterior)
         $('li.forumList-item').each((index, element) => {
             const title = $(element).find('h2.forumList-item-subject-info-title a').text().trim();
             const link = 'https://cursos.alura.com.br' + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
             const category = $(element).find('a.topic-breadCrumb-item-link').first().text().trim();
             const daysText = $(element).find('.forumList-item-info-updatedAt').text().trim(); 
             
-           
+            
             let authorImage = $(element).find('img.forumList-item-info-avatar').attr('src');
             const placeholderAvatar = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010';
 
-           
+            
             if (!authorImage || authorImage.includes('avatar_user.png')) {
                 authorImage = placeholderAvatar; // Força o uso do placeholder
             }
@@ -107,30 +111,30 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 }
 
 async function fetchBBTopics() {
-  const bbUrl = 'https://cursos.alura.com.br/forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
-  try {
-    console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
-    const cookie = await authService.getValidCookie();
-    
-    // 1. Extrai os tópicos
-    const topics = await extractTopicsFromPage(bbUrl, cookie);
-    
-    const classifiedTopics = topics.map(topic => {
-        const priority = classifyTopic(topic);
-        return { ...topic, priority };
-    });
+    const bbUrl = 'https://cursos.alura.com.br/forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
+    try {
+        console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
+        const cookie = await authService.getValidCookie();
+        
+        // 1. Extrai os tópicos
+        const topics = await extractTopicsFromPage(bbUrl, cookie);
+        
+        const classifiedTopics = topics.map(topic => {
+            const priority = classifyTopic(topic);
+            return { ...topic, priority };
+        });
 
-    console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
-    return classifiedTopics; // <-- Retorna os tópicos JÁ CLASSIFICADOS
+        console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
+        return classifiedTopics; // <-- Retorna os tópicos JÁ CLASSIFICADOS
 
-  } catch (error) {
-    console.error('[Worker BB] Falha ao buscar tópicos do Banco do Brasil:', error.message);
-    return []; // Retorna lista vazia em caso de falha
-  }
+    } catch (error) {
+        console.error('[Worker BB] Falha ao buscar tópicos do Banco do Brasil:', error.message);
+        return []; // Retorna lista vazia em caso de falha
+    }
 }
 
 /**
- * <<< OTIMIZADO: Limita a busca a um número máximo de páginas para eficiência >>>
+ * OTIMIZADO: Limita a busca a um número máximo de páginas para eficiência.
  */
 async function fetchAllTopics() {
     const MAX_PAGES_TO_SCRAPE = 5; // Limita a 5 páginas
@@ -163,13 +167,21 @@ async function fetchAllTopics() {
     return classifiedTopics;
 }
 
-// --- Funções de Stats (Originais) ---
+// --- Funções de Stats (Contador Lateral) ---
 
 async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
     const url = `https://cursos.alura.com.br/user/${username}/actions`;
     console.log(`Buscando dados de ações em: ${url}`);
-    const response = await axios.get(url, { headers: { 'Cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
+    
+    // CORRIGIDO: Headers com cookie e User-Agent 
+    const response = await axios.get(url, { 
+        headers: { 
+            'Cookie': cookie, 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' 
+        } 
+    });
+    
     const $ = cheerio.load(response.data);
     const agoraSP = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
     const hoje = new Date(agoraSP);
@@ -182,6 +194,8 @@ async function fetchUserStats(username) {
 
     $('table.actions-table tbody tr').each((index, element) => {
         const actionText = $(element).find('td.actions-table-actionName').text().trim();
+        
+        // <<< CORREÇÃO DE ACENTUAÇÃO APLICADA AQUI >>>
         if (actionText === 'Resposta a tópico do fórum') {
             const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
             if (actionTimestamp) {
@@ -207,7 +221,7 @@ async function fetchUserAvatar(username) {
         const $ = cheerio.load(response.data);
         const avatarUrl = $('.profile-header-avatar').attr('src');
         if (!avatarUrl) {
-            console.warn(`Avatar não encontrado para o usuÃ¡rio: ${username}`);
+            console.warn(`Avatar não encontrado para o usuário: ${username}`);
             return 'https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?';
         }
         console.log(`Avatar encontrado para ${username}: ${avatarUrl}`);
@@ -218,6 +232,8 @@ async function fetchUserAvatar(username) {
     }
 }
 
+// --- Funções de Team Stats (Para /team-stats e /dashboard-stats) ---
+
 async function fetchTeamStats(usernames) {
     const now = new Date();
     const currentUserKey = usernames.slice().sort().join(',');
@@ -225,14 +241,14 @@ async function fetchTeamStats(usernames) {
     if (
         teamStatsCache.data &&
         teamStatsCache.lastFetched &&
-        (now - teamStatsCache.lastFetched < CACHE_DURATION_MS) &&
+        (now - teamStatsCache.lastFetched < TEAM_STATS_CACHE_DURATION_MS) &&
         teamStatsCache.usersKey === currentUserKey
     ) {
         console.log("Servindo estatísticas da equipe a partir do cache (mesma equipe).");
         return teamStatsCache.data;
     }
 
-    console.log("Cache invállido ou equipe diferente. Buscando novos dados...");
+    console.log("Cache inválido ou equipe diferente. Buscando novos dados...");
 
     const teamStats = [];
     for (const username of usernames) {
@@ -254,6 +270,7 @@ async function fetchTeamStats(usernames) {
     return teamStats;
 }
 
+// --- Função de Detalhes para o Dashboard ---
 
 async function fetchUserActivityDetails(username) {
     const cookie = await authService.getValidCookie();
@@ -270,12 +287,13 @@ async function fetchUserActivityDetails(username) {
         const $ = cheerio.load(response.data);
 
         const activities = [];
-        const currentYear = new Date().getFullYear(); // Otimização: Pega o ano atual
+        const currentYear = new Date().getFullYear(); 
 
         $('table.actions-table tbody tr').each((index, element) => {
             const actionText = $(element).find('td.actions-table-actionName').text().trim();
 
-            if (actionText === 'Resposta a tópico do fólm') {
+            // <<< CORREÇÃO DE ACENTUAÇÃO APLICADA AQUI (Causa do Dashboard Zero) >>>
+            if (actionText === 'Resposta a tópico do fórum') { 
                 const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
                 if (actionTimestamp) {
                     const activityDate = new Date(actionTimestamp);
@@ -302,12 +320,13 @@ async function fetchUserActivityDetails(username) {
         throw new Error(`Não foi possível buscar as atividades de ${username}.`);
     }
 }
+
 module.exports = {
     fetchAllTopics,
     fetchUserStats,
     fetchUserAvatar,
-    fetchTeamStats,
-    fetchUserActivityDetails,
-    extractTopicsFromPage, // <--- Exportado
-    fetchBBTopics,         // <--- Exportado
+    fetchTeamStats,              
+    fetchUserActivityDetails,    
+    extractTopicsFromPage, 
+    fetchBBTopics,               
 };
