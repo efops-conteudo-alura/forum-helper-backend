@@ -11,7 +11,7 @@ async function getBrowserAndPage() {
   });
   const page = await browser.newPage();
 
-  // Se existir cookies salvos, usa eles
+
   try {
     const cookiesString = await fs.readFile(COOKIES_PATH, 'utf8');
     const cookies = JSON.parse(cookiesString);
@@ -25,12 +25,10 @@ async function getBrowserAndPage() {
 }
 
 async function ensureLoggedIn(page) {
-  // Substitua pela URL de login ou de uma página que exige login
   await page.goto('https://site-exemplo.com/pagina-privada', {
     waitUntil: 'networkidle2'
   });
 
-  // Se encontrar o campo de login, quer dizer que ainda não está logado
   if (await page.$('#campoUsuario')) {
     console.log('🔐 Fazendo login...');
     await page.type('#campoUsuario', process.env.USERNAME);

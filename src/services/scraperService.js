@@ -8,7 +8,6 @@ let teamStatsCache = {
     lastFetched: null,
     usersKey: null
 };
-// Reduzindo o cache para 1 hora para as stats do sidebar, pois elas são menos pesadas.
 const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000; 
 
 function classifyTopic(topic) {
@@ -79,9 +78,6 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
         const response = await axios.get(pageUrl, { headers });
         const $ = cheerio.load(response.data);
         const topicsList = [];
-
-        // Note que o seletor de tempo foi ajustado para abranger as duas variantes:
-        // .forumList-item-info-updatedAt e .forumList-item-info-updatedAt (do seu código anterior)
         $('li.forumList-item').each((index, element) => {
             const title = $(element).find('h2.forumList-item-subject-info-title a').text().trim();
             const link = 'https://cursos.alura.com.br' + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
@@ -94,13 +90,13 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 
             
             if (!authorImage || authorImage.includes('avatar_user.png')) {
-                authorImage = placeholderAvatar; // Força o uso do placeholder
+                authorImage = placeholderAvatar; 
             }
             
 
             topicsList.push({
                 title, link, category, daysText,
-                authorImage: authorImage // Usa a variável tratada
+                authorImage: authorImage 
             });
         });
         return topicsList;
@@ -116,7 +112,6 @@ async function fetchBBTopics() {
         console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
         const cookie = await authService.getValidCookie();
         
-        // 1. Extrai os tópicos
         const topics = await extractTopicsFromPage(bbUrl, cookie);
         
         const classifiedTopics = topics.map(topic => {
@@ -125,19 +120,16 @@ async function fetchBBTopics() {
         });
 
         console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
-        return classifiedTopics; // <-- Retorna os tópicos JÁ CLASSIFICADOS
+        return classifiedTopics; 
 
     } catch (error) {
         console.error('[Worker BB] Falha ao buscar tópicos do Banco do Brasil:', error.message);
-        return []; // Retorna lista vazia em caso de falha
+        return [];
     }
 }
 
-/**
- * OTIMIZADO: Limita a busca a um número máximo de páginas para eficiência.
- */
 async function fetchAllTopics() {
-    const MAX_PAGES_TO_SCRAPE = 5; // Limita a 5 páginas
+    const MAX_PAGES_TO_SCRAPE = 5;
     let allTopics = [];
     let page = 1;
 
@@ -167,14 +159,11 @@ async function fetchAllTopics() {
     return classifiedTopics;
 }
 
-// --- Funções de Stats (Contador Lateral) ---
-
 async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
     const url = `https://cursos.alura.com.br/user/${username}/actions`;
     console.log(`Buscando dados de ações em: ${url}`);
     
-    // CORRIGIDO: Headers com cookie e User-Agent 
     const response = await axios.get(url, { 
         headers: { 
             'Cookie': cookie, 
@@ -195,7 +184,6 @@ async function fetchUserStats(username) {
     $('table.actions-table tbody tr').each((index, element) => {
         const actionText = $(element).find('td.actions-table-actionName').text().trim();
         
-        // <<< CORREÇÃO DE ACENTUAÇÃO APLICADA AQUI >>>
         if (actionText === 'Resposta a tópico do fórum') {
             const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
             if (actionTimestamp) {
@@ -231,8 +219,6 @@ async function fetchUserAvatar(username) {
         return null;
     }
 }
-
-// --- Funções de Team Stats (Para /team-stats e /dashboard-stats) ---
 
 async function fetchTeamStats(usernames) {
     const now = new Date();
@@ -292,16 +278,14 @@ async function fetchUserActivityDetails(username) {
         $('table.actions-table tbody tr').each((index, element) => {
             const actionText = $(element).find('td.actions-table-actionName').text().trim();
 
-            // <<< CORREÇÃO DE ACENTUAÇÃO APLICADA AQUI (Causa do Dashboard Zero) >>>
             if (actionText === 'Resposta a tópico do fórum') { 
                 const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
                 if (actionTimestamp) {
                     const activityDate = new Date(actionTimestamp);
 
-                    // Otimização: Pára de ler o HTML se a atividade for mais antiga que o ano atual
                     if (activityDate.getFullYear() < currentYear) {
                         console.log(`[${username}] Atividade de ${activityDate.getFullYear()} encontrada. Parando a busca para otimizar.`);
-                        return false; // Interrompe o loop .each do Cheerio
+                        return false; 
                     }
 
                     activities.push({

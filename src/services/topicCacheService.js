@@ -1,32 +1,25 @@
-// src/services/topicCacheService.js
+
 
 const scraperService = require('./scraperService');
 const claimedTopics = require('../state');
 
-// Nossos caches internos. Eles guardam os dados que os workers buscam.
 let generalTopicsCache = [];
 let bbTopicsCache = [];
 
-// Constantes de tempo (em milissegundos)
-const GENERAL_TOPICS_INTERVAL = 15000; // 15 segundos
-const BB_TOPICS_INTERVAL = 300000;      // 5 minutos
 
-/**
- * <<< NOVO: Traduz o texto do tempo para minutos >>>
- * Isso permite ordenar os tópicos corretamente.
- */
+const GENERAL_TOPICS_INTERVAL = 15000; 
+const BB_TOPICS_INTERVAL = 300000;      
+
 function parseDaysTextToMinutes(daysText) {
-    // Tópicos sem data (como o "Tópico privado") vão para o final.
     if (!daysText || daysText === "") {
-        return 9999999; // Retorna um número bem grande
+        return 9999999;
     }
     
     const text = daysText.toLowerCase();
-    // Tenta encontrar um número e uma unidade de tempo (ex: "14", "horas")
     const match = text.match(/(\d+)\s+(minuto|hora|dia|semana|mês|ano)s?/);
 
     if (!match) {
-        return 9999998; // Se não encontrar, também vai para o final
+        return 9999998;
     }
 
     const value = parseInt(match[1], 10);
@@ -51,14 +44,11 @@ function parseDaysTextToMinutes(daysText) {
 }
 
 
-/**
- * Worker 1: Busca os tópicos gerais.
- */
 async function updateGeneralTopics() {
     console.log('[Worker Geral] Buscando tópicos gerais...');
     try {
         const topics = await scraperService.fetchAllTopics();
-        generalTopicsCache = topics; // Atualiza o cache
+        generalTopicsCache = topics; 
         console.log(`[Worker Geral] Cache atualizado com ${topics.length} tópicos.`);
     } catch (error) {
         console.error('[Worker Geral] Erro ao buscar tópicos:', error.message);
@@ -67,9 +57,6 @@ async function updateGeneralTopics() {
     }
 }
 
-/**
- * Worker 2: Busca os tópicos do Banco do Brasil.
- */
 async function updateBBTopics() {
     console.log('[Worker BB] Buscando tópicos do Banco do Brasil...');
     try {
@@ -83,20 +70,13 @@ async function updateBBTopics() {
     }
 }
 
-/**
- * Inicia os dois workers em paralelo.
- */
 exports.startTopicWorkers = () => {
     console.log('Iniciando workers de tópicos...');
     setTimeout(updateGeneralTopics, 0); 
     setTimeout(updateBBTopics, 0);
 };
 
-/**
- * Esta é a função que o controller vai chamar.
- */
 exports.getMergedTopicsWithStatus = () => {
-    // 1. Combina e remove duplicatas (a partir dos caches)
     const uniqueTopicsMap = new Map();
     [...generalTopicsCache, ...bbTopicsCache].forEach(topic => {
         uniqueTopicsMap.set(topic.link, topic);
@@ -104,15 +84,12 @@ exports.getMergedTopicsWithStatus = () => {
     
     const allTopics = Array.from(uniqueTopicsMap.values());
 
-    // 2. <<< CORREÇÃO: Ordena a lista ANTES de qualquer outra coisa >>>
-    // Ordena do menor N de minutos (mais recente) para o maior (mais antigo)
     allTopics.sort((a, b) => {
         const minutesA = parseDaysTextToMinutes(a.daysText);
         const minutesB = parseDaysTextToMinutes(b.daysText);
         return minutesA - minutesB;
     });
 
-    // 3. LÓGICA ANTI-FANTASMA (Agora roda na lista ordenada)
     const liveTopicLinks = new Set(allTopics.map(t => t.link));
     
     let prunedCount = 0;
@@ -125,8 +102,7 @@ exports.getMergedTopicsWithStatus = () => {
     if (prunedCount > 0) {
         console.log(`[getTopics] Limpeza: Removidos ${prunedCount} tópicos fantasma (já respondidos).`);
     }
-
-    // 4. Mapeia o status
+    
     const topicsWithStatus = allTopics.map(topic => {
         if (claimedTopics.has(topic.link)) {
             return { ...topic, isClaimed: true, claimedBy: claimedTopics.get(topic.link) };

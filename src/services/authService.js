@@ -1,4 +1,3 @@
-// src/services/authService.js
 const puppeteer = require('puppeteer');
 const axios = require('axios');
 
@@ -43,16 +42,13 @@ async function isCookieValid(cookie) {
                 'Cookie': cookie,
                 'User-Agent': 'Mozilla/5.0'
             },
-            maxRedirects: 0, // importante: não seguir redirects
+            maxRedirects: 0,
             validateStatus: status => status === 200 || status === 302
         });
 
-        // Se for 200 e tiver algo típico do dashboard logado, está válido
         if (response.status === 200 && response.data.includes('meus cursos')) {
             return true;
         }
-
-        // Se for 302 para login, ou não tiver "meus cursos", está inválido
         return false;
     } catch {
         return false;
@@ -60,7 +56,6 @@ async function isCookieValid(cookie) {
 }
 
 async function getValidCookie() {
-    // Se existe cookie em cache, validamos ele
     if (cachedCookie) {
         const valido = await isCookieValid(cachedCookie);
         if (valido) {
@@ -71,8 +66,6 @@ async function getValidCookie() {
             cachedCookie = null;
         }
     }
-
-    // Se já tem login em andamento, só espera
     if (loginPromise) {
         console.log('⏳ Login em andamento, aguardando...');
         return await loginPromise;

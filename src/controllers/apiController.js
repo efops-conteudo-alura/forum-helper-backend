@@ -2,37 +2,28 @@
 
 const claimedTopics = require('../state');
 const scraperService = require('../services/scraperService');
-const topicCacheService = require('../services/topicCacheService'); // <<< IMPORTA O NOVO SERVIÇO DE CACHE
+const topicCacheService = require('../services/topicCacheService'); 
 
-// <<< NOVO CACHE PARA O DASHBOARD >>> (Mantido como estava)
+
 let dashboardCache = {
-    results: null, // Armazena os resultados brutos da busca
+    results: null, 
     lastFetched: null,
     usersKey: null
 };
 const DASHBOARD_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas
 
-/**
- * ATUALIZADO: Agora é instantâneo. Apenas lê dos caches
- * que são atualizados em background.
- */
 exports.getTopics = async (req, res) => {
     try {
-        // A mágica acontece aqui: busca os dados já processados do cache.
+        
         const topicsWithStatus = topicCacheService.getMergedTopicsWithStatus();
         
-        // Responde imediatamente.
         res.json(topicsWithStatus);
 
     } catch (error) {
-        // Este erro agora só aconteceria se houvesse um problema
-        // na lógica de merge ou no map, o que é raro.
         console.error("Erro no controller getTopics:", error.message);
         res.status(500).json({ message: "Falha ao processar dados dos tópicos." });
     }
 };
-
-// --- Funções Antigas (Permanecem Iguais) ---
 
 exports.claimTopic = async (req, res) => {
     const { topicLink, username } = req.body;
@@ -63,7 +54,7 @@ exports.claimTopic = async (req, res) => {
         setTimeout(() => {
             claimedTopics.delete(topicLink);
             console.log(`Tópico liberado automaticamente (1h): ${topicLink}`);
-        }, 3600000); // 1 hora
+        }, 3600000); 
 
         res.status(200).json({ message: "Tópico pego com sucesso!", user });
 
@@ -142,7 +133,6 @@ exports.getDashboardStats = async (req, res) => {
         const now = new Date();
         let results;
 
-        // <<< LÓGICA DE CACHE >>>
         if (
             dashboardCache.results &&
             dashboardCache.lastFetched &&
@@ -150,7 +140,7 @@ exports.getDashboardStats = async (req, res) => {
             dashboardCache.usersKey === currentUserKey
         ) {
             console.log("Servindo dados do dashboard a partir do cache.");
-            results = dashboardCache.results; // Usa os resultados salvos
+            results = dashboardCache.results;
         } else {
             console.log("Cache do dashboard inválido ou expirado. Buscando novos dados...");
             const promises = usernames.map(username =>
@@ -170,14 +160,11 @@ exports.getDashboardStats = async (req, res) => {
             );
             results = await Promise.all(promises);
 
-            // Salva os novos resultados no cache
             dashboardCache.results = results;
             dashboardCache.lastFetched = now;
             dashboardCache.usersKey = currentUserKey;
             console.log("Novos dados do dashboard salvos no cache.");
         }
-
-        // --- A partir daqui, o código de processamento é o mesmo, mas usa os 'results' (do cache ou novos) ---
 
         const currentYear = new Date().getFullYear();
         const defaultStartDate = new Date(`${currentYear}-01-01T00:00:00.000Z`);
