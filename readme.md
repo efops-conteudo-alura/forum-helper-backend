@@ -71,21 +71,6 @@ ALURA_USER=seu_email@alura.com.br
 ALURA_PASSWORD=sua_senha_alura
 ```
 
-Aqui está a continuação formatada exatamente como você pediu, com as tabelas organizadas e o HTML de autores limpo (removi os redirecionamentos do Google que vieram no seu copy-paste para os links funcionarem corretamente).
-
-Basta copiar e colar este bloco abaixo no final do seu arquivo `README.md`.
-
-```markdown
-### 3. Configuração (.env)
-
-Crie um arquivo `.env` na raiz do projeto com as credenciais para o scraping logado:
-
-```env
-ALURA_USER=seu_email@alura.com.br
-ALURA_PASSWORD=sua_senha_alura
-
-```
-
 ### 4. Executar
 
 ```bash
