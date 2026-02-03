@@ -15,10 +15,17 @@ async function loginAndGetCookie() {
 
     try {
         await page.goto('https://cursos.alura.com.br/loginForm', { waitUntil: 'networkidle2' });
+
+        await page.waitForSelector('#login-email', { timeout: 10000 });
+
         await page.type('#login-email', process.env.ALURA_USER);
         await page.type('#password', process.env.ALURA_PASSWORD);
-        await page.click('button[type="submit"]');
-        await page.waitForNavigation({ waitUntil: 'networkidle2' });
+
+        
+        await page.keyboard.press('Enter');
+
+
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 });
 
         console.log('✅ Login realizado com sucesso!');
         const cookies = await page.cookies();

@@ -3,6 +3,9 @@ const cheerio = require('cheerio');
 const authService = require('./authService');
 
 
+const BI_STATS_URL = "https://bi.caelumalura.com.br/public/result?id=a41d8792-0079-11f1-bbf5-02001700bcbe&format=json"
+let biCache = null;
+
 let teamStatsCache = {
     data: null,
     lastFetched: null,
@@ -84,15 +87,12 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
             const category = $(element).find('a.topic-breadCrumb-item-link').first().text().trim();
             const daysText = $(element).find('.forumList-item-info-updatedAt').text().trim(); 
             
-            
             let authorImage = $(element).find('img.forumList-item-info-avatar').attr('src');
             const placeholderAvatar = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010';
-
             
             if (!authorImage || authorImage.includes('avatar_user.png')) {
                 authorImage = placeholderAvatar; 
             }
-            
 
             topicsList.push({
                 title, link, category, daysText,
@@ -139,7 +139,7 @@ async function fetchAllTopics() {
         const pageUrl = `https://cursos.alura.com.br/forum/sem-resposta/${page}`;
         console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
         
-        const topicsFromPage = await extractTopicsFromPage(pageUrl); // Busca pública
+        const topicsFromPage = await extractTopicsFromPage(pageUrl); 
         
         if (topicsFromPage.length === 0) {
             console.log(`[Worker Geral] Página ${page} vazia. Parando a busca.`);
@@ -204,18 +204,16 @@ async function fetchUserStats(username) {
 async function fetchUserAvatar(username) {
     try {
         const profileUrl = `https://cursos.alura.com.br/user/${username}`;
-        console.log(`Buscando avatar em: ${profileUrl}`);
         const response = await axios.get(profileUrl);
         const $ = cheerio.load(response.data);
         const avatarUrl = $('.profile-header-avatar').attr('src');
         if (!avatarUrl) {
-            console.warn(`Avatar não encontrado para o usuário: ${username}`);
+            
             return 'https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?';
         }
-        console.log(`Avatar encontrado para ${username}: ${avatarUrl}`);
+        
         return avatarUrl;
     } catch (error) {
-        console.error(`Erro ao buscar avatar para o usuário ${username}:`, error.message);
         return null;
     }
 }
@@ -256,8 +254,6 @@ async function fetchTeamStats(usernames) {
     return teamStats;
 }
 
-// --- Função de Detalhes para o Dashboard ---
-
 async function fetchUserActivityDetails(username) {
     const cookie = await authService.getValidCookie();
     const url = `https://cursos.alura.com.br/user/${username}/actions`;
@@ -284,7 +280,6 @@ async function fetchUserActivityDetails(username) {
                     const activityDate = new Date(actionTimestamp);
 
                     if (activityDate.getFullYear() < currentYear) {
-                        console.log(`[${username}] Atividade de ${activityDate.getFullYear()} encontrada. Parando a busca para otimizar.`);
                         return false; 
                     }
 
@@ -305,6 +300,47 @@ async function fetchUserActivityDetails(username) {
     }
 }
 
+async function fetchGeneralStats() {
+    try {
+        if (biCache && (Date.now() - biCache.timestamp < 600000)) return biCache.data;
+
+        console.log("📊 [BI] Baixando dados para o Dashboard...");
+        const response = await axios.get(BI_STATS_URL);
+        const data = response.data.result; 
+
+        if (!data) return [];
+
+        const stats = data.map(row => ({
+            post_id: row[0],
+            post_date: row[1],
+            responder_username: row[2],
+            responder_name: row[3],
+            topic_id: row[4],
+            subject: row[5],
+            topic_status: row[6],
+            topic_date: row[7],
+            student_username: row[8],
+            
+            school: row[9] || 'Outros',
+            course: row[10] || 'Geral',
+
+            sla_minutes: parseFloat(row[11]),
+            responded_24h: parseInt(row[12]),
+            is_solution: parseInt(row[13]),
+            link: row[14],
+
+            interaction_order: parseInt(row[15]), 
+            post_hour: parseInt(row[16]) 
+        }));
+
+        biCache = { data: stats, timestamp: Date.now() };
+        return stats;
+    } catch (error) {
+        console.error("Erro BI:", error.message);
+        return [];
+    }
+}
+
 module.exports = {
     fetchAllTopics,
     fetchUserStats,
@@ -312,5 +348,6 @@ module.exports = {
     fetchTeamStats,              
     fetchUserActivityDetails,    
     extractTopicsFromPage, 
-    fetchBBTopics,               
+    fetchBBTopics,
+    fetchGeneralStats
 };

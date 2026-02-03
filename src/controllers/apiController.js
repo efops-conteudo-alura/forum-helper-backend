@@ -1,24 +1,18 @@
-// src/controllers/apiController.js
-
 const claimedTopics = require('../state');
 const scraperService = require('../services/scraperService');
 const topicCacheService = require('../services/topicCacheService'); 
-
 
 let dashboardCache = {
     results: null, 
     lastFetched: null,
     usersKey: null
 };
-const DASHBOARD_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas
+const DASHBOARD_CACHE_DURATION_MS = 60 * 60 * 1000;
 
 exports.getTopics = async (req, res) => {
     try {
-        
         const topicsWithStatus = topicCacheService.getMergedTopicsWithStatus();
-        
         res.json(topicsWithStatus);
-
     } catch (error) {
         console.error("Erro no controller getTopics:", error.message);
         res.status(500).json({ message: "Falha ao processar dados dos tópicos." });
@@ -92,13 +86,11 @@ exports.getUserStats = async (req, res) => {
         if (!username) {
             return res.status(400).json({ message: 'Username é obrigatório.' });
         }
-
         const stats = await scraperService.fetchUserStats(username);
-
         res.json(stats);
     } catch (error) {
         console.error(`Erro ao buscar estatísticas para ${req.query.username}:`, error.message);
-        res.status(500).json({ message: `Falha ao buscar ou processar dados para "${req.query.username}". Verifique o nome de usuário.` });
+        res.status(500).json({ message: `Falha ao buscar ou processar dados.` });
     }
 };
 
@@ -108,12 +100,9 @@ exports.getTeamStats = async (req, res) => {
         if (!users) {
             return res.status(400).json({ message: 'A lista de usuários (users) é obrigatória.' });
         }
-
         const usernames = users.split(',');
         const stats = await scraperService.fetchTeamStats(usernames);
-
         res.json(stats);
-
     } catch (error) {
         console.error("Erro detalhado no controller getTeamStats:", error);
         res.status(500).json({ message: "Falha ao buscar as estatísticas da equipe." });
@@ -124,110 +113,109 @@ exports.getDashboardStats = async (req, res) => {
     const { users, startDate, endDate } = req.query;
 
     if (!users) {
-        return res.status(400).json({ message: 'O parâmetro "users" (usuários separados por vírgula) é obrigatório.' });
+        return res.status(400).json({ message: 'O parâmetro "users" é obrigatório.' });
     }
 
     try {
-        const usernames = users.split(',');
-        const currentUserKey = usernames.slice().sort().join(',');
-        const now = new Date();
-        let results;
+        const allStats = await scraperService.fetchGeneralStats();
 
-        if (
-            dashboardCache.results &&
-            dashboardCache.lastFetched &&
-            (now - dashboardCache.lastFetched < DASHBOARD_CACHE_DURATION_MS) &&
-            dashboardCache.usersKey === currentUserKey
-        ) {
-            console.log("Servindo dados do dashboard a partir do cache.");
-            results = dashboardCache.results;
-        } else {
-            console.log("Cache do dashboard inválido ou expirado. Buscando novos dados...");
-            const promises = usernames.map(username =>
-                Promise.all([
-                    scraperService.fetchUserAvatar(username.trim()),
-                    scraperService.fetchUserActivityDetails(username.trim())
-                ]).then(([avatar, activities]) => ({
-                    username: username.trim(),
-                    avatar,
-                    activities,
-                    success: true
-                })).catch(error => ({
-                    username: username.trim(),
-                    success: false,
-                    error: error.message
-                }))
-            );
-            results = await Promise.all(promises);
+        const targetUsers = users.split(',').map(u => u.trim());
+        
+        const startStr = (startDate && startDate !== 'undefined') ? startDate.substring(0, 10) : null;
+        const endStr = (endDate && endDate !== 'undefined') ? endDate.substring(0, 10) : null;
 
-            dashboardCache.results = results;
-            dashboardCache.lastFetched = now;
-            dashboardCache.usersKey = currentUserKey;
-            console.log("Novos dados do dashboard salvos no cache.");
-        }
-
-        const currentYear = new Date().getFullYear();
-        const defaultStartDate = new Date(`${currentYear}-01-01T00:00:00.000Z`);
-        const start = startDate ? new Date(startDate) : defaultStartDate;
-        const end = endDate ? new Date(endDate) : null;
-        const todayKey = new Date().toISOString().split('T')[0];
-
-        if ((startDate && isNaN(start)) || (endDate && isNaN(end))) {
-            return res.status(400).json({ message: 'Formato de data inválido. Use AAAA-MM-DD.' });
-        }
-        if (end) end.setHours(23, 59, 59, 999);
-
-        const dashboardData = {
-            users: [],
+        const dashboardResponse = {
             summary: {
                 totalResponses: 0,
                 responsesByDate: {},
-            }
+                totalSolutions: 0,
+                avgSlaMinutes: 0,
+                schools: {},
+            },
+            users: []
         };
 
-        for (const userResult of results) {
-            if (!userResult.success) {
-                dashboardData.users.push({
-                    username: userResult.username,
-                    totalResponses: 0,
-                    dailyData: {},
-                    error: userResult.error
-                });
-                continue;
-            }
+        let totalSla = 0;
+        const userMap = {};
 
-            const userStats = {
-                username: userResult.username,
-                avatar: userResult.avatar,
+        await Promise.all(targetUsers.map(async (u) => {
+            const avatarUrl = await scraperService.fetchUserAvatar(u);
+            userMap[u] = {
+                username: u,
+                avatar: avatarUrl,
                 totalResponses: 0,
+                totalSolutions: 0,
+                
+                firstResponses: 0, 
+                replies: 0,        
+                schools: {},       
+                
                 dailyData: {}
             };
+        }));
 
-            for (const activity of userResult.activities) {
-                const activityDate = new Date(activity.date);
-                const dayKey = activityDate.toISOString().split('T')[0];
+        allStats.forEach(item => {
+            if (!targetUsers.includes(item.responder_username)) return;
 
-                if (dayKey === todayKey) {
-                    continue;
-                }
+            const itemDate = item.post_date.substring(0, 10);
+            if (startStr && itemDate < startStr) return;
+            if (endStr && itemDate > endStr) return;
 
-                if ((start && activityDate < start) || (end && activityDate > end)) {
-                    continue;
-                }
-
-                userStats.dailyData[dayKey] = (userStats.dailyData[dayKey] || 0) + 1;
-                userStats.totalResponses++;
-
-                dashboardData.summary.responsesByDate[dayKey] = (dashboardData.summary.responsesByDate[dayKey] || 0) + 1;
-                dashboardData.summary.totalResponses++;
+           
+            dashboardResponse.summary.totalResponses++;
+            dashboardResponse.summary.responsesByDate[itemDate] = (dashboardResponse.summary.responsesByDate[itemDate] || 0) + 1;
+            const escola = item.school || 'Outros';
+            if (!dashboardResponse.summary.schools[escola]) {
+                dashboardResponse.summary.schools[escola] = 0;
             }
-            dashboardData.users.push(userStats);
+            dashboardResponse.summary.schools[escola]++;
+
+            if (item.is_solution) dashboardResponse.summary.totalSolutions++;
+            if (item.sla_minutes) totalSla += parseFloat(item.sla_minutes);
+
+            
+            if (userMap[item.responder_username]) {
+                const u = userMap[item.responder_username];
+                
+                u.totalResponses++;
+                if (item.is_solution) u.totalSolutions++;
+                u.dailyData[itemDate] = (u.dailyData[itemDate] || 0) + 1;
+
+                const escola = item.school;
+                if (!u.schools[escola]) u.schools[escola] = 0;
+                u.schools[escola]++;
+
+                if (item.interaction_order === 1) {
+                    u.firstResponses++;
+                } else {
+                    u.replies++;
+                }
+            }
+        });
+
+        
+        if (dashboardResponse.summary.totalResponses > 0) {
+            dashboardResponse.summary.avgSlaMinutes = (totalSla / dashboardResponse.summary.totalResponses).toFixed(0);
         }
 
-        res.json(dashboardData);
+        dashboardResponse.users = Object.values(userMap);
+        
+        res.json(dashboardResponse);
 
     } catch (error) {
-        console.error("Erro detalhado no controller getDashboardStats:", error);
-        res.status(500).json({ message: "Falha geral ao processar os dados para o dashboard." });
+        console.error("Erro no getDashboardStats:", error);
+        res.status(500).json({ message: "Erro ao processar dashboard." });
+    }
+};
+
+exports.getUserAvatar = async (req, res) => {
+    try {
+        const { username } = req.query;
+        if (!username) return res.status(400).json({ success: false });
+        
+        const avatarUrl = await scraperService.fetchUserAvatar(username);
+        res.json({ success: true, avatarUrl });
+    } catch (error) {
+        res.status(500).json({ success: false });
     }
 };
