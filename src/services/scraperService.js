@@ -1,9 +1,12 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const authService = require('./authService');
-
+const { Classifier } = require('../utils/classifier'); 
 
 const BI_STATS_URL = "https://bi.caelumalura.com.br/public/result?id=a41d8792-0079-11f1-bbf5-02001700bcbe&format=json"
+const base_header = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+const baseUrl = "https://cursos.alura.com.br/";
+const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000; 
 let biCache = null;
 
 let teamStatsCache = {
@@ -11,67 +14,23 @@ let teamStatsCache = {
     lastFetched: null,
     usersKey: null
 };
-const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000; 
 
 function classifyTopic(topic) {
     const title = topic.title.toLowerCase();
 
-    const errorKeywords = [
-        '[bug]', '[reclamação]', 'erro', 'não funciona', 'não consigo', 'não aparece',
-        'problema', 'exception', 'falha', 'não abre', 'não roda', 'não carrega',
-        'travando', 'crash', 'bugado', 'não compila', 'não imprime', 'não executa',
-        'message:', 'traceback', 'stack overflow'
-    ];
-    if (errorKeywords.some(keyword => title.includes(keyword))) {
-        return 'Complexo';
+  for (const [, category]of Object.entries(Classifier)) {
+    const { label, keywords } = category;
+    if (keywords.some(word => title.includes(word.toLowerCase()))) {
+      return label;
     }
-
-    const challengeKeywords = ['tentei fazer', 'extra', 'melhoria', 'otimizar'];
-    if (challengeKeywords.some(keyword => title.includes(keyword))) {
-        return 'Complexo';
-    }
-
-    const feedbackKeywords = [
-        '[projeto]','[Projeto]', 'meu projeto', 'minha resolução', 'minha solução',
-        'meu codigo', 'meu exercício', 'meu exercicio', 'meu portfólio',
-        'portifólio', 'projeto final', 'projeto concluído', 'quero feedback',
-        'avaliação', 'dêem feedback', 'meu site', 'meu app', 'desafios finais', 
-        'desafio - hora da pratica','resolução','desafio'
-    ];
-    if (feedbackKeywords.some(keyword => title.includes(keyword))) {
-        return 'Feedback';
-    }
-
-    const advancedConceptKeywords = [
-        'arquitetura', 'performance', 'melhorar', 'estratégia', 'gestão',
-        'otimizar', 'melhor forma', 'qual a melhor', 'boas práticas',
-        'padrão de projeto', 'design pattern', 'estrutura', 'pipeline',
-        'ambiente', 'sobrecarga', 'comportamento estranho', 'variáveis de ambiente',
-        'testes automatizados', 'deploy', 'banco de dados', 'api rest',
-        'persistência', 'thread', 'assíncrono', 'async', 'await', 'kernel',
-        'hook', 'encapsulamento', 'parâmetro', 'modularização'
-    ];
-    if (advancedConceptKeywords.some(keyword => title.includes(keyword))) {
-        return 'Complexo';
-    }
-
-    const easyKeywords = [
-        'dúvida', 'como faço', 'o que é', 'para que serve', 'iniciante',
-        'primeiros passos', 'ajuda', 'não entendi', 'explicação', 'passo a passo',
-        'erro simples', 'como começo', 'aprendendo agora', 'sou novo', 'primeira vez'
-    ];
-    if (easyKeywords.some(keyword => title.includes(keyword))) {
-        return 'Fácil';
-    }
-
+  }
     return 'Fácil';
 }
-
 
 async function extractTopicsFromPage(pageUrl, cookie = null) {
     try {
         const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': base_header
         };
 
         if (cookie) {
@@ -83,7 +42,7 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
         const topicsList = [];
         $('li.forumList-item').each((index, element) => {
             const title = $(element).find('h2.forumList-item-subject-info-title a').text().trim();
-            const link = 'https://cursos.alura.com.br' + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
+            const link = baseUrl + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
             const category = $(element).find('a.topic-breadCrumb-item-link').first().text().trim();
             const daysText = $(element).find('.forumList-item-info-updatedAt').text().trim(); 
             
@@ -107,7 +66,7 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 }
 
 async function fetchBBTopics() {
-    const bbUrl = 'https://cursos.alura.com.br/forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
+    const bbUrl = baseUrl + 'forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
     try {
         console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
         const cookie = await authService.getValidCookie();
@@ -136,7 +95,7 @@ async function fetchAllTopics() {
     console.log(`[Worker Geral] Iniciando busca de tópicos gerais (limite de ${MAX_PAGES_TO_SCRAPE} páginas)...`);
 
     while (page <= MAX_PAGES_TO_SCRAPE) {
-        const pageUrl = `https://cursos.alura.com.br/forum/sem-resposta/${page}`;
+        const pageUrl = baseUrl + `forum/sem-resposta/${page}`;
         console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
         
         const topicsFromPage = await extractTopicsFromPage(pageUrl); 
@@ -161,13 +120,13 @@ async function fetchAllTopics() {
 
 async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
-    const url = `https://cursos.alura.com.br/user/${username}/actions`;
+    const url = baseUrl + `user/${username}/actions`;
     console.log(`Buscando dados de ações em: ${url}`);
     
     const response = await axios.get(url, { 
         headers: { 
             'Cookie': cookie, 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' 
+            'User-Agent': base_header
         } 
     });
     
@@ -203,7 +162,7 @@ async function fetchUserStats(username) {
 
 async function fetchUserAvatar(username) {
     try {
-        const profileUrl = `https://cursos.alura.com.br/user/${username}`;
+        const profileUrl = baseUrl + `user/${username}`;
         const response = await axios.get(profileUrl);
         const $ = cheerio.load(response.data);
         const avatarUrl = $('.profile-header-avatar').attr('src');
@@ -256,14 +215,14 @@ async function fetchTeamStats(usernames) {
 
 async function fetchUserActivityDetails(username) {
     const cookie = await authService.getValidCookie();
-    const url = `https://cursos.alura.com.br/user/${username}/actions`;
+    const url = baseUrl + `user/${username}/actions`;
     console.log(`Buscando detalhes de atividade para ${username} em: ${url}`);
 
     try {
         const response = await axios.get(url, {
             headers: {
                 'Cookie': cookie,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': base_header
             }
         });
         const $ = cheerio.load(response.data);
