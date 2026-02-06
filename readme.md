@@ -47,8 +47,9 @@ Este serviço atua como um facilitador para a equipe de suporte educacional. Ele
 ## 🚀 Como Rodar
 
 ### 1. Pré-requisitos
-* Node.js (LTS)
-* NPM ou Yarn
+
+- Node.js (LTS)
+- NPM ou Yarn
 
 ### 2. Instalação
 
@@ -62,6 +63,7 @@ cd alura-forum-helper-backend
 # Instale as dependências
 npm install
 ```
+
 ### 3. Configuração (.env)
 
 Crie um arquivo `.env` na raiz do projeto com as credenciais para o scraping logado:
@@ -90,10 +92,10 @@ A API estará rodando em: `http://localhost:3000/api`
 
 ### Tópicos e Claims
 
-| Método | Endpoint | Descrição |
-| --- | --- | --- |
-| `GET` | `/api/topics` | Lista todos os tópicos sem resposta (com status de claim). |
-| `POST` | `/api/claim` | Reserva um tópico. <br>
+| Método | Endpoint      | Descrição                                                  |
+| ------ | ------------- | ---------------------------------------------------------- |
+| `GET`  | `/api/topics` | Lista todos os tópicos sem resposta (com status de claim). |
+| `POST` | `/api/claim`  | Reserva um tópico. <br>                                    |
 
 <br>**Body:** `{ "topicLink": "...", "username": "..." }` |
 | `POST` | `/api/unclaim` | Libera um tópico reservado. <br>
@@ -102,9 +104,9 @@ A API estará rodando em: `http://localhost:3000/api`
 
 ### Estatísticas
 
-| Método | Endpoint | Descrição |
-| --- | --- | --- |
-| `GET` | `/api/user-stats` | Stats do dia/mês de um usuário. <br>
+| Método | Endpoint          | Descrição                            |
+| ------ | ----------------- | ------------------------------------ |
+| `GET`  | `/api/user-stats` | Stats do dia/mês de um usuário. <br> |
 
 <br>**Query:** `?username=fulano` |
 | `GET` | `/api/team-stats` | Stats do dia de múltiplos usuários. <br>
@@ -117,6 +119,7 @@ A API estará rodando em: `http://localhost:3000/api`
 ---
 
 ## 🤝 Autores
+
 <table>
   <tr>
     <td align="center">

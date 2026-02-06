@@ -1,61 +1,66 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const authService = require('./authService');
-const { Classifier } = require('../utils/classifier'); 
+const axios = require("axios");
+const cheerio = require("cheerio");
+const authService = require("./authService");
+const { Classifier } = require("../utils/classifier");
 
-const BI_STATS_URL = "https://bi.caelumalura.com.br/public/result?id=a41d8792-0079-11f1-bbf5-02001700bcbe&format=json"
-const base_header = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+const BI_STATS_URL = "https://bi.caelumalura.com.br/public/result?id=a41d8792-0079-11f1-bbf5-02001700bcbe&format=json";
+const base_header = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 const baseUrl = "https://cursos.alura.com.br/";
-const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000; 
+const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000;
 let biCache = null;
 
 let teamStatsCache = {
     data: null,
     lastFetched: null,
-    usersKey: null
+    usersKey: null,
 };
 
 function classifyTopic(topic) {
     const title = topic.title.toLowerCase();
 
-  for (const [, category]of Object.entries(Classifier)) {
-    const { label, keywords } = category;
-    if (keywords.some(word => title.includes(word.toLowerCase()))) {
-      return label;
+    for (const [, category] of Object.entries(Classifier)) {
+        const { label, keywords } = category;
+        if (keywords.some((word) => title.includes(word.toLowerCase()))) {
+            return label;
+        }
     }
-  }
-    return 'Fácil';
+    return "Fácil";
 }
 
 async function extractTopicsFromPage(pageUrl, cookie = null) {
     try {
         const headers = {
-            'User-Agent': base_header
+            "User-Agent": base_header,
         };
 
         if (cookie) {
-            headers['Cookie'] = cookie;
+            headers["Cookie"] = cookie;
         }
 
         const response = await axios.get(pageUrl, { headers });
         const $ = cheerio.load(response.data);
         const topicsList = [];
-        $('li.forumList-item').each((index, element) => {
-            const title = $(element).find('h2.forumList-item-subject-info-title a').text().trim();
-            const link = baseUrl + $(element).find('h2.forumList-item-subject-info-title a').attr('href');
-            const category = $(element).find('a.topic-breadCrumb-item-link').first().text().trim();
-            const daysText = $(element).find('.forumList-item-info-updatedAt').text().trim(); 
-            
-            let authorImage = $(element).find('img.forumList-item-info-avatar').attr('src');
-            const placeholderAvatar = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010';
-            
-            if (!authorImage || authorImage.includes('avatar_user.png')) {
-                authorImage = placeholderAvatar; 
+        $("li.forumList-item").each((index, element) => {
+            const title = $(element).find("h2.forumList-item-subject-info-title a").text().trim();
+            const link =
+                baseUrl + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
+
+            const category = $(element).find("a.topic-breadCrumb-item-link").first().text().trim();
+            const daysText = $(element).find(".forumList-item-info-updatedAt").text().trim();
+
+            let authorImage = $(element).find("img.forumList-item-info-avatar").attr("src");
+            const placeholderAvatar = "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010";
+
+            if (!authorImage || authorImage.includes("avatar_user.png")) {
+                authorImage = placeholderAvatar;
             }
 
             topicsList.push({
-                title, link, category, daysText,
-                authorImage: authorImage 
+                title,
+                link,
+                category,
+                daysText,
+                authorImage: authorImage,
             });
         });
         return topicsList;
@@ -66,23 +71,22 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 }
 
 async function fetchBBTopics() {
-    const bbUrl = baseUrl + 'forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012';
+    const bbUrl = baseUrl + "forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012";
     try {
-        console.log('[Worker BB] Buscando tópicos do Banco do Brasil (logado)...');
+        console.log("[Worker BB] Buscando tópicos do Banco do Brasil (logado)...");
         const cookie = await authService.getValidCookie();
-        
+
         const topics = await extractTopicsFromPage(bbUrl, cookie);
-        
-        const classifiedTopics = topics.map(topic => {
+
+        const classifiedTopics = topics.map((topic) => {
             const priority = classifyTopic(topic);
             return { ...topic, priority };
         });
 
         console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
-        return classifiedTopics; 
-
+        return classifiedTopics;
     } catch (error) {
-        console.error('[Worker BB] Falha ao buscar tópicos do Banco do Brasil:', error.message);
+        console.error("[Worker BB] Falha ao buscar tópicos do Banco do Brasil:", error.message);
         return [];
     }
 }
@@ -97,19 +101,19 @@ async function fetchAllTopics() {
     while (page <= MAX_PAGES_TO_SCRAPE) {
         const pageUrl = baseUrl + `forum/sem-resposta/${page}`;
         console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
-        
-        const topicsFromPage = await extractTopicsFromPage(pageUrl); 
-        
+
+        const topicsFromPage = await extractTopicsFromPage(pageUrl);
+
         if (topicsFromPage.length === 0) {
             console.log(`[Worker Geral] Página ${page} vazia. Parando a busca.`);
             break;
         }
-        
+
         allTopics = allTopics.concat(topicsFromPage);
         page++;
     }
 
-    const classifiedTopics = allTopics.map(topic => {
+    const classifiedTopics = allTopics.map((topic) => {
         const priority = classifyTopic(topic);
         return { ...topic, priority };
     });
@@ -122,32 +126,36 @@ async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
     const url = baseUrl + `user/${username}/actions`;
     console.log(`Buscando dados de ações em: ${url}`);
-    
-    const response = await axios.get(url, { 
-        headers: { 
-            'Cookie': cookie, 
-            'User-Agent': base_header
-        } 
+
+    const response = await axios.get(url, {
+        headers: {
+            Cookie: cookie,
+            "User-Agent": base_header,
+        },
     });
-    
+
     const $ = cheerio.load(response.data);
-    const agoraSP = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+    const agoraSP = new Date().toLocaleString("en-US", {
+        timeZone: "America/Sao_Paulo",
+    });
     const hoje = new Date(agoraSP);
 
-    let contadorDia = 0;
-    let contadorMes = 0;
+    let contadorDia,
+        contadorMes = 0;
     const diaAtual = hoje.getDate();
     const mesAtual = hoje.getMonth() + 1;
     const anoAtual = hoje.getFullYear();
 
-    $('table.actions-table tbody tr').each((index, element) => {
-        const actionText = $(element).find('td.actions-table-actionName').text().trim();
-        
-        if (actionText === 'Resposta a tópico do fórum') {
-            const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
+    $("table.actions-table tbody tr").each((index, element) => {
+        const actionText = $(element).find("td.actions-table-actionName").text().trim();
+
+        if (actionText === "Resposta a tópico do fórum") {
+            const actionTimestamp = $(element)
+                .find(".actions-table-actionDate")
+                .attr("data-action-time");
             if (actionTimestamp) {
                 const dataAcao = new Date(actionTimestamp);
-                if (dataAcao.getFullYear() === anoAtual && (dataAcao.getMonth() + 1) === mesAtual) {
+                if (dataAcao.getFullYear() === anoAtual && dataAcao.getMonth() + 1 === mesAtual) {
                     contadorMes++;
                     if (dataAcao.getDate() === diaAtual) {
                         contadorDia++;
@@ -165,12 +173,12 @@ async function fetchUserAvatar(username) {
         const profileUrl = baseUrl + `user/${username}`;
         const response = await axios.get(profileUrl);
         const $ = cheerio.load(response.data);
-        const avatarUrl = $('.profile-header-avatar').attr('src');
+        const avatarUrl = $(".profile-header-avatar").attr("src");
+
         if (!avatarUrl) {
-            
-            return 'https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?';
+            return "https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?";
         }
-        
+
         return avatarUrl;
     } catch (error) {
         return null;
@@ -179,12 +187,12 @@ async function fetchUserAvatar(username) {
 
 async function fetchTeamStats(usernames) {
     const now = new Date();
-    const currentUserKey = usernames.slice().sort().join(',');
+    const currentUserKey = usernames.slice().sort().join(",");
 
     if (
         teamStatsCache.data &&
         teamStatsCache.lastFetched &&
-        (now - teamStatsCache.lastFetched < TEAM_STATS_CACHE_DURATION_MS) &&
+        now - teamStatsCache.lastFetched < TEAM_STATS_CACHE_DURATION_MS &&
         teamStatsCache.usersKey === currentUserKey
     ) {
         console.log("Servindo estatísticas da equipe a partir do cache (mesma equipe).");
@@ -198,7 +206,11 @@ async function fetchTeamStats(usernames) {
         const user = username.trim();
         try {
             const stats = await fetchUserStats(user);
-            teamStats.push({ username: user, postsToday: stats.postsToday, success: true });
+            teamStats.push({
+                username: user,
+                postsToday: stats.postsToday,
+                success: true,
+            });
         } catch (error) {
             console.error(`Falha ao buscar dados para: ${user}. Erro: ${error.message}`);
             teamStats.push({ username: user, postsToday: 0, success: false });
@@ -221,30 +233,32 @@ async function fetchUserActivityDetails(username) {
     try {
         const response = await axios.get(url, {
             headers: {
-                'Cookie': cookie,
-                'User-Agent': base_header
-            }
+                Cookie: cookie,
+                "User-Agent": base_header,
+            },
         });
         const $ = cheerio.load(response.data);
 
         const activities = [];
-        const currentYear = new Date().getFullYear(); 
+        const currentYear = new Date().getFullYear();
 
-        $('table.actions-table tbody tr').each((index, element) => {
-            const actionText = $(element).find('td.actions-table-actionName').text().trim();
+        $("table.actions-table tbody tr").each((index, element) => {
+            const actionText = $(element).find("td.actions-table-actionName").text().trim();
 
-            if (actionText === 'Resposta a tópico do fórum') { 
-                const actionTimestamp = $(element).find('.actions-table-actionDate').attr('data-action-time');
+            if (actionText === "Resposta a tópico do fórum") {
+                const actionTimestamp = $(element)
+                    .find(".actions-table-actionDate")
+                    .attr("data-action-time");
                 if (actionTimestamp) {
                     const activityDate = new Date(actionTimestamp);
 
                     if (activityDate.getFullYear() < currentYear) {
-                        return false; 
+                        return false;
                     }
 
                     activities.push({
-                        type: 'forum-response',
-                        date: actionTimestamp
+                        type: "forum-response",
+                        date: actionTimestamp,
                     });
                 }
             }
@@ -252,7 +266,6 @@ async function fetchUserActivityDetails(username) {
 
         console.log(`Extraídas ${activities.length} respostas do fórum para ${username} (apenas ano atual).`);
         return activities;
-
     } catch (error) {
         console.error(`Erro crítico ao buscar atividades detalhadas para ${username}:`, error.message);
         throw new Error(`Não foi possível buscar as atividades de ${username}.`);
@@ -261,15 +274,15 @@ async function fetchUserActivityDetails(username) {
 
 async function fetchGeneralStats() {
     try {
-        if (biCache && (Date.now() - biCache.timestamp < 600000)) return biCache.data;
+        if (biCache && Date.now() - biCache.timestamp < 600000) return biCache.data;
 
         console.log("📊 [BI] Baixando dados para o Dashboard...");
         const response = await axios.get(BI_STATS_URL);
-        const data = response.data.result; 
+        const data = response.data.result;
 
         if (!data) return [];
 
-        const stats = data.map(row => ({
+        const stats = data.map((row) => ({
             post_id: row[0],
             post_date: row[1],
             responder_username: row[2],
@@ -279,17 +292,17 @@ async function fetchGeneralStats() {
             topic_status: row[6],
             topic_date: row[7],
             student_username: row[8],
-            
-            school: row[9] || 'Outros',
-            course: row[10] || 'Geral',
+
+            school: row[9] || "Outros",
+            course: row[10] || "Geral",
 
             sla_minutes: parseFloat(row[11]),
             responded_24h: parseInt(row[12]),
             is_solution: parseInt(row[13]),
             link: row[14],
 
-            interaction_order: parseInt(row[15]), 
-            post_hour: parseInt(row[16]) 
+            interaction_order: parseInt(row[15]),
+            post_hour: parseInt(row[16]),
         }));
 
         biCache = { data: stats, timestamp: Date.now() };
@@ -304,9 +317,9 @@ module.exports = {
     fetchAllTopics,
     fetchUserStats,
     fetchUserAvatar,
-    fetchTeamStats,              
-    fetchUserActivityDetails,    
-    extractTopicsFromPage, 
+    fetchTeamStats,
+    fetchUserActivityDetails,
+    extractTopicsFromPage,
     fetchBBTopics,
-    fetchGeneralStats
+    fetchGeneralStats,
 };
