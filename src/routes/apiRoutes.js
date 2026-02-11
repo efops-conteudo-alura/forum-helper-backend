@@ -1,17 +1,17 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 
-const apiController = require('../controllers/apiController');
+const apiController = require("../controllers/apiController");
 
-router.get('/topics', apiController.getTopics);
-router.post('/claim', apiController.claimTopic);
-router.post('/unclaim', apiController.unclaimTopic);
+router.get("/topics", apiController.getTopics);
+router.post("/claim", apiController.claimTopic);
+router.post("/unclaim", apiController.unclaimTopic);
 
-router.get('/user-stats', apiController.getUserStats);
-router.get('/team-stats', apiController.getTeamStats);
+router.get("/user-stats", apiController.getUserStats);
+router.get("/team-stats", apiController.getTeamStats);
 
-router.get('/dashboard-stats', apiController.getDashboardStats);
+router.get("/dashboard-stats", apiController.getDashboardStats);
 
-router.get('/user-avatar', apiController.getUserAvatar);
+router.get("/user-avatar", apiController.getUserAvatar);
 
 module.exports = router;
