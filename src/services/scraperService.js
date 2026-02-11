@@ -1,13 +1,10 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
-const authService = require("./authService");
 const { Classifier } = require("../utils/classifier");
 const { mapBIRowToStats } = require("../utils/mappers");
-const URLS  = require("../utils/urls");
-
-const DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-}
+const { parseUserStats, parseExtractTopicsFromPage, parseActivityDetails } = require("../utils/parsing");
+const URLS = require("../utils/urls");
+const { fetchHtml } = require("../infra/httpClient");
 
 const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000;
 let biCache = null;
@@ -30,38 +27,12 @@ function classifyTopic(topic) {
     return "Fácil";
 }
 
-async function extractTopicsFromPage(pageUrl, cookie = null) {
+async function extractTopicsFromPage(pageUrl) {
     try {
-        const headers = { ...DEFAULT_HEADERS };
+        const response = await fetchHtml(pageUrl);
+        const $ = cheerio.load(response);
+        const topicsList = parseExtractTopicsFromPage($);
 
-        if (cookie) {
-            headers["Cookie"] = cookie;
-        }
-
-        const response = await axios.get(pageUrl, { headers });
-        const $ = cheerio.load(response.data);
-        const topicsList = [];
-        $("li.forumList-item").each((index, element) => {
-            const title = $(element).find("h2.forumList-item-subject-info-title a").text().trim();
-            const link = URLS.BASE_URL + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
-
-            const category = $(element).find("a.topic-breadCrumb-item-link").first().text().trim();
-            const daysText = $(element).find(".forumList-item-info-updatedAt").text().trim();
-
-            let authorImage = $(element).find("img.forumList-item-info-avatar").attr("src");
-
-            if (!authorImage || authorImage.includes("avatar_user.png")) {
-                authorImage = URLS.PLACEHOLDER_AVATAR;
-            }
-
-            topicsList.push({
-                title,
-                link,
-                category,
-                daysText,
-                authorImage: authorImage,
-            });
-        });
         return topicsList;
     } catch (error) {
         console.error(`Erro ao extrair tópicos da URL: ${pageUrl}`, error.message);
@@ -72,10 +43,8 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 async function fetchBBTopics() {
     try {
         console.log("[Worker BB] Buscando tópicos do Banco do Brasil (logado)...");
-        const cookie = await authService.getValidCookie();
 
-        const topics = await extractTopicsFromPage(URLS.BB_URL, cookie);
-
+        const topics = await extractTopicsFromPage(URLS.BB_URL);
         const classifiedTopics = topics.map((topic) => {
             const priority = classifyTopic(topic);
             return { ...topic, priority };
@@ -120,54 +89,24 @@ async function fetchAllTopics() {
 }
 
 async function fetchUserStats(username) {
-    const cookie = await authService.getValidCookie();
     const url = URLS.USER_STATS_URL(username);
+    const response = await fetchHtml(url);
+
     console.log(`Buscando dados de ações em: ${url}`);
 
-    const response = await axios.get(url, {
-        headers: {
-            Cookie: cookie,
-            ...DEFAULT_HEADERS
-        },
-    });
+    const $ = cheerio.load(response);
+    const hoje = getCurrentDateInSP();
+    const { contadorDia, contadorMes } = parseUserStats($, hoje);
 
-    const $ = cheerio.load(response.data);
-    const agoraSP = new Date().toLocaleString("en-US", {
-        timeZone: "America/Sao_Paulo",
-    });
-    const hoje = new Date(agoraSP);
-
-    let contadorDia, contadorMes = 0;
-    const diaAtual = hoje.getDate();
-    const mesAtual = hoje.getMonth() + 1;
-    const anoAtual = hoje.getFullYear();
-
-    $("table.actions-table tbody tr").each((index, element) => {
-        const actionText = $(element).find("td.actions-table-actionName").text().trim();
-
-        if (actionText === "Resposta a tópico do fórum") {
-            const actionTimestamp = $(element)
-                .find(".actions-table-actionDate")
-                .attr("data-action-time");
-            if (actionTimestamp) {
-                const dataAcao = new Date(actionTimestamp);
-                if (dataAcao.getFullYear() === anoAtual && dataAcao.getMonth() + 1 === mesAtual) {
-                    contadorMes++;
-                    if (dataAcao.getDate() === diaAtual) {
-                        contadorDia++;
-                    }
-                }
-            }
-        }
-    });
     console.log(`Contagem de stats finalizada. Posts hoje: ${contadorDia}, Posts no mês: ${contadorMes}.`);
+
     return { postsToday: contadorDia, postsMonth: contadorMes };
 }
 
 async function fetchUserAvatar(username) {
     try {
         const response = await axios.get(URLS.PROFILE_URL(username));
-        const $ = cheerio.load(response.data);
+        const $ = cheerio.load(response);
         const avatarUrl = $(".profile-header-avatar").attr("src");
 
         if (!avatarUrl) {
@@ -221,48 +160,23 @@ async function fetchTeamStats(usernames) {
 }
 
 async function fetchUserActivityDetails(username) {
-    const cookie = await authService.getValidCookie();
     const url = URLS.USER_STATS_URL(username);
     console.log(`Buscando detalhes de atividade para ${username} em: ${url}`);
 
     try {
-        const response = await axios.get(url, {
-            headers: {
-                Cookie: cookie,
-                ...DEFAULT_HEADERS
-            },
-        });
-        const $ = cheerio.load(response.data);
-
-        const activities = [];
         const currentYear = new Date().getFullYear();
-
-        $("table.actions-table tbody tr").each((index, element) => {
-            const actionText = $(element).find("td.actions-table-actionName").text().trim();
-
-            if (actionText === "Resposta a tópico do fórum") {
-                const actionTimestamp = $(element)
-                    .find(".actions-table-actionDate")
-                    .attr("data-action-time");
-                if (actionTimestamp) {
-                    const activityDate = new Date(actionTimestamp);
-
-                    if (activityDate.getFullYear() < currentYear) {
-                        return false;
-                    }
-
-                    activities.push({
-                        type: "forum-response",
-                        date: actionTimestamp,
-                    });
-                }
-            }
-        });
+        const response = await fetchHtml(url);
+        const $ = cheerio.load(response);
+        const activities = parseActivityDetails($, currentYear);
 
         console.log(`Extraídas ${activities.length} respostas do fórum para ${username} (apenas ano atual).`);
+
         return activities;
     } catch (error) {
-        console.error(`Erro crítico ao buscar atividades detalhadas para ${username}:`, error.message);
+        console.error(
+            `Erro crítico ao buscar atividades detalhadas para ${username}:`,
+            error.message
+        );
         throw new Error(`Não foi possível buscar as atividades de ${username}.`);
     }
 }
@@ -273,7 +187,9 @@ async function fetchGeneralStats() {
 
         console.log("📊 [BI] Baixando dados para o Dashboard...");
 
-        const { data: { result: rawData } } = await axios.get(URLS.BI_STATS_URL);
+        const {
+            data: { result: rawData },
+        } = await axios.get(URLS.BI_STATS_URL);
         const stats = rawData ? rawData.map(mapBIRowToStats) : [];
 
         biCache = { data: stats, timestamp: Date.now() };
@@ -294,3 +210,10 @@ module.exports = {
     fetchBBTopics,
     fetchGeneralStats,
 };
+
+function getCurrentDateInSP() {
+    const agoraSP = new Date().toLocaleString("en-US", {
+        timeZone: "America/Sao_Paulo",
+    });
+    return new Date(agoraSP);
+}

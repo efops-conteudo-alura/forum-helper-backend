@@ -11,5 +11,5 @@ module.exports = {
 
     PAGE_URL: (page) => `${BASE_URL}/forum/sem-resposta/${page}`,
     USER_STATS_URL: (username) => `${BASE_URL}/user/${username}/actions`,
-    PROFILE_URL: (username) => `${BASE_URL}/user/${username}`
-}
+    PROFILE_URL: (username) => `${BASE_URL}/user/${username}`,
+};

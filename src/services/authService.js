@@ -1,10 +1,10 @@
 const puppeteer = require("puppeteer");
 const axios = require("axios");
-
-const baseUrl = "https://cursos.alura.com.br/";
+const URLS = require("../utils/urls");
 
 let cachedCookie = null;
 let loginPromise = null;
+let cookieValidUntil = 0;
 
 async function loginAndGetCookie() {
     console.log("🔐 Iniciando login automático com Puppeteer...");
@@ -16,7 +16,7 @@ async function loginAndGetCookie() {
     const page = await browser.newPage();
 
     try {
-        await page.goto(baseUrl + "loginForm", { waitUntil: "networkidle2" });
+        await page.goto(URLS.BASE_URL + "/loginForm", { waitUntil: "networkidle2" });
         await page.waitForSelector("#login-email", { timeout: 10000 });
         await page.type("#login-email", process.env.ALURA_USER);
         await page.type("#password", process.env.ALURA_PASSWORD);
@@ -42,7 +42,7 @@ async function loginAndGetCookie() {
 
 async function isCookieValid(cookie) {
     try {
-        const response = await axios.get(baseUrl + "dashboard", {
+        const response = await axios.get(URLS.BASE_URL + "/dashboard", {
             headers: {
                 Cookie: cookie,
                 "User-Agent": "Mozilla/5.0",
@@ -55,20 +55,29 @@ async function isCookieValid(cookie) {
             return true;
         }
         return false;
-    } catch {
+    } catch(error) {
+        console.log(error.message);
         return false;
     }
 }
 
 async function getValidCookie() {
+    const now = Date.now();
+
+    if (cachedCookie && now < cookieValidUntil) {
+        return cachedCookie;
+    }
+
     if (cachedCookie) {
         const valido = await isCookieValid(cachedCookie);
         if (valido) {
             console.log("♻️ Usando cookie válido do cache.");
+            cookieValidUntil = now + 5 * 60 * 1000;
             return cachedCookie;
         } else {
             console.log("⚠️ Cookie expirado, fazendo novo login...");
             cachedCookie = null;
+            cookieValidUntil = 0;
         }
     }
     if (loginPromise) {
