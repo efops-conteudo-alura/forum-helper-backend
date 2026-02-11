@@ -4,8 +4,7 @@ const claimedTopics = require("../state");
 const GENERAL_TOPICS_INTERVAL = 15000;
 const BB_TOPICS_INTERVAL = 300000;
 
-let generalTopicsCache = [];
-let bbTopicsCache = [];
+let generalTopicsCache, bbTopicsCache = [];
 
 function parseDaysTextToMinutes(daysText) {
     if (!daysText || daysText === "") {

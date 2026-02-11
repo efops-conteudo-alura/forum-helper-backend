@@ -2,10 +2,13 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const authService = require("./authService");
 const { Classifier } = require("../utils/classifier");
+const { mapBIRowToStats } = require("../utils/mappers");
+const URLS  = require("../utils/urls");
 
-const BI_STATS_URL = "https://bi.caelumalura.com.br/public/result?id=a41d8792-0079-11f1-bbf5-02001700bcbe&format=json";
-const base_header = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-const baseUrl = "https://cursos.alura.com.br/";
+const DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
+
 const TEAM_STATS_CACHE_DURATION_MS = 60 * 60 * 1000;
 let biCache = null;
 
@@ -29,9 +32,7 @@ function classifyTopic(topic) {
 
 async function extractTopicsFromPage(pageUrl, cookie = null) {
     try {
-        const headers = {
-            "User-Agent": base_header,
-        };
+        const headers = { ...DEFAULT_HEADERS };
 
         if (cookie) {
             headers["Cookie"] = cookie;
@@ -42,17 +43,15 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
         const topicsList = [];
         $("li.forumList-item").each((index, element) => {
             const title = $(element).find("h2.forumList-item-subject-info-title a").text().trim();
-            const link =
-                baseUrl + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
+            const link = URLS.BASE_URL + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
 
             const category = $(element).find("a.topic-breadCrumb-item-link").first().text().trim();
             const daysText = $(element).find(".forumList-item-info-updatedAt").text().trim();
 
             let authorImage = $(element).find("img.forumList-item-info-avatar").attr("src");
-            const placeholderAvatar = "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010";
 
             if (!authorImage || authorImage.includes("avatar_user.png")) {
-                authorImage = placeholderAvatar;
+                authorImage = URLS.PLACEHOLDER_AVATAR;
             }
 
             topicsList.push({
@@ -71,12 +70,11 @@ async function extractTopicsFromPage(pageUrl, cookie = null) {
 }
 
 async function fetchBBTopics() {
-    const bbUrl = baseUrl + "forum/customSearch/filter/1?restriction=sem-resposta&categoryUrlName=Todas+as+categorias&subCategoryUrlName=&companyIds=7012";
     try {
         console.log("[Worker BB] Buscando tópicos do Banco do Brasil (logado)...");
         const cookie = await authService.getValidCookie();
 
-        const topics = await extractTopicsFromPage(bbUrl, cookie);
+        const topics = await extractTopicsFromPage(URLS.BB_URL, cookie);
 
         const classifiedTopics = topics.map((topic) => {
             const priority = classifyTopic(topic);
@@ -99,10 +97,9 @@ async function fetchAllTopics() {
     console.log(`[Worker Geral] Iniciando busca de tópicos gerais (limite de ${MAX_PAGES_TO_SCRAPE} páginas)...`);
 
     while (page <= MAX_PAGES_TO_SCRAPE) {
-        const pageUrl = baseUrl + `forum/sem-resposta/${page}`;
         console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
 
-        const topicsFromPage = await extractTopicsFromPage(pageUrl);
+        const topicsFromPage = await extractTopicsFromPage(URLS.PAGE_URL(page));
 
         if (topicsFromPage.length === 0) {
             console.log(`[Worker Geral] Página ${page} vazia. Parando a busca.`);
@@ -124,13 +121,13 @@ async function fetchAllTopics() {
 
 async function fetchUserStats(username) {
     const cookie = await authService.getValidCookie();
-    const url = baseUrl + `user/${username}/actions`;
+    const url = URLS.USER_STATS_URL(username);
     console.log(`Buscando dados de ações em: ${url}`);
 
     const response = await axios.get(url, {
         headers: {
             Cookie: cookie,
-            "User-Agent": base_header,
+            ...DEFAULT_HEADERS
         },
     });
 
@@ -140,8 +137,7 @@ async function fetchUserStats(username) {
     });
     const hoje = new Date(agoraSP);
 
-    let contadorDia,
-        contadorMes = 0;
+    let contadorDia, contadorMes = 0;
     const diaAtual = hoje.getDate();
     const mesAtual = hoje.getMonth() + 1;
     const anoAtual = hoje.getFullYear();
@@ -170,13 +166,12 @@ async function fetchUserStats(username) {
 
 async function fetchUserAvatar(username) {
     try {
-        const profileUrl = baseUrl + `user/${username}`;
-        const response = await axios.get(profileUrl);
+        const response = await axios.get(URLS.PROFILE_URL(username));
         const $ = cheerio.load(response.data);
         const avatarUrl = $(".profile-header-avatar").attr("src");
 
         if (!avatarUrl) {
-            return "https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?";
+            return URLS.PLACEHOLDER;
         }
 
         return avatarUrl;
@@ -227,14 +222,14 @@ async function fetchTeamStats(usernames) {
 
 async function fetchUserActivityDetails(username) {
     const cookie = await authService.getValidCookie();
-    const url = baseUrl + `user/${username}/actions`;
+    const url = URLS.USER_STATS_URL(username);
     console.log(`Buscando detalhes de atividade para ${username} em: ${url}`);
 
     try {
         const response = await axios.get(url, {
             headers: {
                 Cookie: cookie,
-                "User-Agent": base_header,
+                ...DEFAULT_HEADERS
             },
         });
         const $ = cheerio.load(response.data);
@@ -277,33 +272,9 @@ async function fetchGeneralStats() {
         if (biCache && Date.now() - biCache.timestamp < 600000) return biCache.data;
 
         console.log("📊 [BI] Baixando dados para o Dashboard...");
-        const response = await axios.get(BI_STATS_URL);
-        const data = response.data.result;
 
-        if (!data) return [];
-
-        const stats = data.map((row) => ({
-            post_id: row[0],
-            post_date: row[1],
-            responder_username: row[2],
-            responder_name: row[3],
-            topic_id: row[4],
-            subject: row[5],
-            topic_status: row[6],
-            topic_date: row[7],
-            student_username: row[8],
-
-            school: row[9] || "Outros",
-            course: row[10] || "Geral",
-
-            sla_minutes: parseFloat(row[11]),
-            responded_24h: parseInt(row[12]),
-            is_solution: parseInt(row[13]),
-            link: row[14],
-
-            interaction_order: parseInt(row[15]),
-            post_hour: parseInt(row[16]),
-        }));
+        const { data: { result: rawData } } = await axios.get(URLS.BI_STATS_URL);
+        const stats = rawData ? rawData.map(mapBIRowToStats) : [];
 
         biCache = { data: stats, timestamp: Date.now() };
         return stats;
