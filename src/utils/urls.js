@@ -1,7 +1,9 @@
 const BASE_URL = "https://cursos.alura.com.br";
+const LATAM_BASE_URL = "https://app.aluracursos.com";
 
 module.exports = {
     BASE_URL,
+    LATAM_BASE_URL,
 
     PLACEHOLDER_AVATAR: "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?20170328184010",
     PLACEHOLDER: "https://via.placeholder.com/40/CCCCCC/FFFFFF?text=?",
@@ -12,4 +14,7 @@ module.exports = {
     PAGE_URL: (page) => `${BASE_URL}/forum/sem-resposta/${page}`,
     USER_STATS_URL: (username) => `${BASE_URL}/user/${username}/actions`,
     PROFILE_URL: (username) => `${BASE_URL}/user/${username}`,
+
+    // LATAM
+    LATAM_USER_STATS_URL: (username) => `${LATAM_BASE_URL}/user/${username}/actions`,
 };

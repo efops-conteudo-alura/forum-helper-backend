@@ -230,3 +230,18 @@ exports.getUserAvatar = async (req, res) => {
         res.status(500).json({ success: false });
     }
 };
+
+exports.getLatamUserStats = async (req, res) => {
+    try {
+        const { username } = req.query;
+        if (!username) {
+            return res.status(400).json({ message: "Username LATAM é obrigatório." });
+        }
+        
+        const stats = await scraperService.fetchLatamUserStats(username);
+        res.json(stats);
+    } catch (error) {
+        console.error(`Erro LATAM Controller:`, error.message);
+        res.status(500).json({ message: "Falha ao processar dados LATAM." });
+    }
+};

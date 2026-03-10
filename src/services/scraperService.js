@@ -27,12 +27,11 @@ function classifyTopic(topic) {
     return "Fácil";
 }
 
-async function extractTopicsFromPage(pageUrl) {
+async function extractTopicsFromPage(pageUrl, useAuth = true) {
     try {
-        const response = await fetchHtml(pageUrl);
+        const response = await fetchHtml(pageUrl, useAuth);
         const $ = cheerio.load(response);
         const topicsList = parseExtractTopicsFromPage($);
-
         return topicsList;
     } catch (error) {
         console.error(`Erro ao extrair tópicos da URL: ${pageUrl}`, error.message);
@@ -43,17 +42,16 @@ async function extractTopicsFromPage(pageUrl) {
 async function fetchBBTopics() {
     try {
         console.log("[Worker BB] Buscando tópicos do Banco do Brasil (logado)...");
-
-        const topics = await extractTopicsFromPage(URLS.BB_URL);
+        const topics = await extractTopicsFromPage(URLS.BB_URL, true);
         const classifiedTopics = topics.map((topic) => {
             const priority = classifyTopic(topic);
             return { ...topic, priority };
         });
 
-        console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos do Banco do Brasil.`);
+        console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos.`);
         return classifiedTopics;
     } catch (error) {
-        console.error("[Worker BB] Falha ao buscar tópicos do Banco do Brasil:", error.message);
+        console.error("[Worker BB] Falha:", error.message);
         return [];
     }
 }
@@ -63,15 +61,15 @@ async function fetchAllTopics() {
     let allTopics = [];
     let page = 1;
 
-    console.log(`[Worker Geral] Iniciando busca de tópicos gerais (limite de ${MAX_PAGES_TO_SCRAPE} páginas)...`);
+    console.log(`[Worker Geral] Iniciando busca PÚBLICA de tópicos (sem login)...`);
 
     while (page <= MAX_PAGES_TO_SCRAPE) {
         console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
 
-        const topicsFromPage = await extractTopicsFromPage(URLS.PAGE_URL(page));
+        const topicsFromPage = await extractTopicsFromPage(URLS.PAGE_URL(page), false);
 
         if (topicsFromPage.length === 0) {
-            console.log(`[Worker Geral] Página ${page} vazia. Parando a busca.`);
+            console.log(`[Worker Geral] Página ${page} vazia. Parando.`);
             break;
         }
 
@@ -84,120 +82,94 @@ async function fetchAllTopics() {
         return { ...topic, priority };
     });
 
-    console.log(`[Worker Geral] Busca e classificação de tópicos gerais finalizada. Total: ${classifiedTopics.length}`);
+    console.log(`[Worker Geral] Finalizado. Total: ${classifiedTopics.length}`);
     return classifiedTopics;
 }
 
 async function fetchUserStats(username) {
     const url = URLS.USER_STATS_URL(username);
-    const response = await fetchHtml(url);
+    const response = await fetchHtml(url, true); // Login BR
 
     console.log(`Buscando dados de ações em: ${url}`);
-
     const $ = cheerio.load(response);
     const hoje = getCurrentDateInSP();
     const { contadorDia, contadorMes } = parseUserStats($, hoje);
 
-    console.log(`Contagem de stats finalizada. Posts hoje: ${contadorDia}, Posts no mês: ${contadorMes}.`);
-
+    console.log(`Stats BR: ${contadorDia} hoje / ${contadorMes} mês.`);
     return { postsToday: contadorDia, postsMonth: contadorMes };
+}
+
+async function fetchLatamUserStats(username) {
+    const url = URLS.LATAM_USER_STATS_URL(username);
+    console.log(`🌎 [LATAM] Buscando ações para: ${username}`);
+
+    try {
+        const response = await fetchHtml(url, true);
+        const $ = cheerio.load(response);
+        const hoje = getCurrentDateInSP();
+        const { contadorDia, contadorMes } = parseUserStats($, hoje);
+
+        console.log(`✅ [LATAM] Sucesso: ${contadorDia} hoje / ${contadorMes} mês`);
+        return { postsToday: contadorDia, postsMonth: contadorMes, platform: 'LATAM' };
+    } catch (error) {
+        console.error(`❌ [LATAM] Erro:`, error.message);
+        return { postsToday: 0, postsMonth: 0, platform: 'LATAM' };
+    }
 }
 
 async function fetchUserAvatar(username) {
     try {
         const response = await axios.get(URLS.PROFILE_URL(username));
-        const $ = cheerio.load(response);
+        const $ = cheerio.load(response.data);
         const avatarUrl = $(".profile-header-avatar").attr("src");
-
-        if (!avatarUrl) {
-            return URLS.PLACEHOLDER;
-        }
-
+        if (!avatarUrl) return URLS.PLACEHOLDER;
         return avatarUrl;
-    } catch (error) {
-        return null;
-    }
+    } catch (error) { return null; }
 }
 
 async function fetchTeamStats(usernames) {
     const now = new Date();
     const currentUserKey = usernames.slice().sort().join(",");
-
-    if (
-        teamStatsCache.data &&
-        teamStatsCache.lastFetched &&
-        now - teamStatsCache.lastFetched < TEAM_STATS_CACHE_DURATION_MS &&
-        teamStatsCache.usersKey === currentUserKey
-    ) {
-        console.log("Servindo estatísticas da equipe a partir do cache (mesma equipe).");
+    if (teamStatsCache.data && teamStatsCache.lastFetched && now - teamStatsCache.lastFetched < TEAM_STATS_CACHE_DURATION_MS && teamStatsCache.usersKey === currentUserKey) {
         return teamStatsCache.data;
     }
-
-    console.log("Cache inválido ou equipe diferente. Buscando novos dados...");
-
     const teamStats = [];
     for (const username of usernames) {
         const user = username.trim();
         try {
             const stats = await fetchUserStats(user);
-            teamStats.push({
-                username: user,
-                postsToday: stats.postsToday,
-                success: true,
-            });
+            teamStats.push({ username: user, postsToday: stats.postsToday, success: true });
         } catch (error) {
-            console.error(`Falha ao buscar dados para: ${user}. Erro: ${error.message}`);
             teamStats.push({ username: user, postsToday: 0, success: false });
         }
     }
-
     teamStatsCache.data = teamStats;
     teamStatsCache.lastFetched = new Date();
     teamStatsCache.usersKey = currentUserKey;
-    console.log("Novas estatísticas da equipe salvas no cache.");
-
     return teamStats;
 }
 
 async function fetchUserActivityDetails(username) {
     const url = URLS.USER_STATS_URL(username);
-    console.log(`Buscando detalhes de atividade para ${username} em: ${url}`);
-
     try {
         const currentYear = new Date().getFullYear();
-        const response = await fetchHtml(url);
+        const response = await fetchHtml(url, true);
         const $ = cheerio.load(response);
         const activities = parseActivityDetails($, currentYear);
-
-        console.log(`Extraídas ${activities.length} respostas do fórum para ${username} (apenas ano atual).`);
-
         return activities;
     } catch (error) {
-        console.error(
-            `Erro crítico ao buscar atividades detalhadas para ${username}:`,
-            error.message
-        );
-        throw new Error(`Não foi possível buscar as atividades de ${username}.`);
+        throw new Error(`Erro ao buscar atividades: ${username}.`);
     }
 }
 
 async function fetchGeneralStats() {
     try {
         if (biCache && Date.now() - biCache.timestamp < 600000) return biCache.data;
-
-        console.log("📊 [BI] Baixando dados para o Dashboard...");
-
-        const {
-            data: { result: rawData },
-        } = await axios.get(URLS.BI_STATS_URL);
+        const { data: { result: rawData } } = await axios.get(URLS.BI_STATS_URL);
         const stats = rawData ? rawData.map(mapBIRowToStats) : [];
-
         biCache = { data: stats, timestamp: Date.now() };
         return stats;
-    } catch (error) {
-        console.error("Erro BI:", error.message);
-        return [];
-    }
+    } catch (error) { return []; }
 }
 
 module.exports = {
@@ -209,6 +181,7 @@ module.exports = {
     extractTopicsFromPage,
     fetchBBTopics,
     fetchGeneralStats,
+    fetchLatamUserStats,
 };
 
 function getCurrentDateInSP() {

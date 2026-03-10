@@ -14,4 +14,6 @@ router.get("/dashboard-stats", apiController.getDashboardStats);
 
 router.get("/user-avatar", apiController.getUserAvatar);
 
+router.get("/latam-user-stats", apiController.getLatamUserStats);
+
 module.exports = router;

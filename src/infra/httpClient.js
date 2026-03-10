@@ -1,12 +1,23 @@
 const axios = require("axios");
 const authService = require("../services/authService");
+const authServiceLatam = require("../services/authServiceLatam");
+
 const DEFAULT_HEADERS = {
     "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 };
 
-async function fetchHtml(url) {
-    const cookie = await authService.getValidCookie();
+async function fetchHtml(url, useAuth = true) {
+    let cookie = null;
+
+    if (useAuth) {
+        if (url.includes("aluracursos.com")) {
+            cookie = await authServiceLatam.getValidCookie();
+        } else {
+            cookie = await authService.getValidCookie();
+        }
+    }
+
     const headers = { ...DEFAULT_HEADERS };
 
     if (cookie) {
@@ -14,7 +25,6 @@ async function fetchHtml(url) {
     }
 
     const response = await axios.get(url, { headers });
-
     return response.data;
 }
 

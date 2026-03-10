@@ -11,7 +11,12 @@ function parseUserStats($, hoje) {
     $("table.actions-table tbody tr").each((index, element) => {
         const actionText = $(element).find("td.actions-table-actionName").text().trim();
 
-        if (actionText === "Resposta a tópico do fórum") {
+        const isForumResponse = 
+            actionText === "Resposta a tópico do fórum" || 
+            actionText === "Respuesta a tópico del foro" ||
+            actionText === "Tópico solucionado";
+
+        if (isForumResponse) {
             const actionTimestamp = $(element)
                 .find(".actions-table-actionDate")
                 .attr("data-action-time");
@@ -37,14 +42,11 @@ function parseExtractTopicsFromPage($) {
 
     $("li.forumList-item").each((index, element) => {
         const title = $(element).find("h2.forumList-item-subject-info-title a").text().trim();
-        const link =
-            URLS.BASE_URL + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
-
+        const link = URLS.BASE_URL + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
         const category = $(element).find("a.topic-breadCrumb-item-link").first().text().trim();
         const daysText = $(element).find(".forumList-item-info-updatedAt").text().trim();
 
         let authorImage = $(element).find("img.forumList-item-info-avatar").attr("src");
-
         if (!authorImage || authorImage.includes("avatar_user.png")) {
             authorImage = URLS.PLACEHOLDER_AVATAR;
         }
@@ -66,7 +68,7 @@ function parseActivityDetails($, currentYear) {
     $("table.actions-table tbody tr").each((index, element) => {
         const actionText = $(element).find("td.actions-table-actionName").text().trim();
 
-        if (actionText === "Resposta a tópico do fórum") {
+        if (actionText === "Resposta a tópico do fórum" || actionText === "Respuesta a tópico del foro") {
             const actionTimestamp = $(element)
                 .find(".actions-table-actionDate")
                 .attr("data-action-time");
