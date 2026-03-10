@@ -57,7 +57,7 @@ async function updateBBTopics() {
     console.log("[Worker BB] Buscando tópicos do Banco do Brasil...");
     try {
         const topics = await scraperService.fetchBBTopics();
-        bbTopicsCache = topics; // Atualiza o cache
+        bbTopicsCache = topics;
         console.log(`[Worker BB] Cache atualizado com ${topics.length} tópicos.`);
     } catch (error) {
         console.error("[Worker BB] Erro ao buscar tópicos do BB:", error.message);

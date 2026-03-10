@@ -64,11 +64,9 @@ async function loginAndGetCookie() {
             console.log("✅ [LATAM] Redirecionamento concluído!");
         }
 
-        // Pega os cookies
         const cookies = await page.cookies();
         const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 
-        // JSESSIONID ou alura.session geralmente são grandes. Se for muito curto, falhou.
         if (cookieString.length < 20) {
             throw new Error("Cookie vazio ou inválido. O login falhou.");
         }
@@ -105,7 +103,7 @@ async function getValidCookie() {
     if (cachedCookie) {
         const valido = await isCookieValid(cachedCookie);
         if (valido) {
-            cookieValidUntil = now + 5 * 60 * 1000; // Validade de 5 minutos no cache
+            cookieValidUntil = now + 5 * 60 * 1000;
             return cachedCookie;
         } else {
             console.log("⚠️ [LATAM] Cookie expirado, gerando um novo login...");
