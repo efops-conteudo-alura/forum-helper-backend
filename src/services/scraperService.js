@@ -27,11 +27,11 @@ function classifyTopic(topic) {
     return "Fácil";
 }
 
-async function extractTopicsFromPage(pageUrl, useAuth = true) {
+async function extractTopicsFromPage(pageUrl, useAuth = true, baseUrl = URLS.BASE_URL) {
     try {
         const response = await fetchHtml(pageUrl, useAuth);
         const $ = cheerio.load(response);
-        const topicsList = parseExtractTopicsFromPage($);
+        const topicsList = parseExtractTopicsFromPage($, baseUrl);
         return topicsList;
     } catch (error) {
         console.error(`Erro ao extrair tópicos da URL: ${pageUrl}`, error.message);
@@ -42,13 +42,12 @@ async function extractTopicsFromPage(pageUrl, useAuth = true) {
 async function fetchBBTopics() {
     try {
         console.log("[Worker BB] Buscando tópicos do Banco do Brasil (logado)...");
-        const topics = await extractTopicsFromPage(URLS.BB_URL, true);
+        const topics = await extractTopicsFromPage(URLS.BB_URL, true, URLS.BASE_URL);
         const classifiedTopics = topics.map((topic) => {
             const priority = classifyTopic(topic);
-            return { ...topic, priority };
+            return { ...topic, priority, region: 'BR' };
         });
 
-        console.log(`[Worker BB] Encontrados e classificados ${classifiedTopics.length} tópicos.`);
         return classifiedTopics;
     } catch (error) {
         console.error("[Worker BB] Falha:", error.message);
@@ -61,12 +60,10 @@ async function fetchAllTopics() {
     let allTopics = [];
     let page = 1;
 
-    console.log(`[Worker Geral] Iniciando busca PÚBLICA de tópicos (sem login)...`);
+    console.log(`[Worker Geral] Iniciando busca PÚBLICA de tópicos BR (sem login)...`);
 
     while (page <= MAX_PAGES_TO_SCRAPE) {
-        console.log(`[Worker Geral] Buscando tópicos da página ${page}...`);
-
-        const topicsFromPage = await extractTopicsFromPage(URLS.PAGE_URL(page), false);
+        const topicsFromPage = await extractTopicsFromPage(URLS.PAGE_URL(page), false, URLS.BASE_URL);
 
         if (topicsFromPage.length === 0) {
             console.log(`[Worker Geral] Página ${page} vazia. Parando.`);
@@ -79,29 +76,55 @@ async function fetchAllTopics() {
 
     const classifiedTopics = allTopics.map((topic) => {
         const priority = classifyTopic(topic);
-        return { ...topic, priority };
+        return { ...topic, priority, region: 'BR' };
     });
 
-    console.log(`[Worker Geral] Finalizado. Total: ${classifiedTopics.length}`);
+    return classifiedTopics;
+}
+
+async function fetchLatamTopics() {
+    const MAX_PAGES_TO_SCRAPE = 5;
+    let allTopics = [];
+    let page = 1;
+
+    console.log(`[Worker LATAM] Iniciando busca PÚBLICA de tópicos LATAM...`);
+
+    while (page <= MAX_PAGES_TO_SCRAPE) {
+        console.log(`[Worker LATAM] Buscando página ${page}...`);
+        
+        // Passamos a URL base da LATAM e FALSE para login (é público!)
+        const topicsFromPage = await extractTopicsFromPage(URLS.LATAM_PAGE_URL(page), false, URLS.LATAM_BASE_URL);
+
+        if (topicsFromPage.length === 0) {
+            console.log(`[Worker LATAM] Página ${page} vazia. Parando.`);
+            break;
+        }
+        allTopics = allTopics.concat(topicsFromPage);
+        page++;
+    }
+
+    const classifiedTopics = allTopics.map((topic) => {
+        const priority = classifyTopic(topic);
+        return { ...topic, priority, region: 'LATAM' };
+    });
+
+    console.log(`[Worker LATAM] Finalizado. Total: ${classifiedTopics.length}`);
     return classifiedTopics;
 }
 
 async function fetchUserStats(username) {
     const url = URLS.USER_STATS_URL(username);
-    const response = await fetchHtml(url, true); // Login BR
+    const response = await fetchHtml(url, true);
 
-    console.log(`Buscando dados de ações em: ${url}`);
     const $ = cheerio.load(response);
     const hoje = getCurrentDateInSP();
     const { contadorDia, contadorMes } = parseUserStats($, hoje);
 
-    console.log(`Stats BR: ${contadorDia} hoje / ${contadorMes} mês.`);
     return { postsToday: contadorDia, postsMonth: contadorMes };
 }
 
 async function fetchLatamUserStats(username) {
     const url = URLS.LATAM_USER_STATS_URL(username);
-    console.log(`🌎 [LATAM] Buscando ações para: ${username}`);
 
     try {
         const response = await fetchHtml(url, true);
@@ -112,7 +135,6 @@ async function fetchLatamUserStats(username) {
         console.log(`✅ [LATAM] Sucesso: ${contadorDia} hoje / ${contadorMes} mês`);
         return { postsToday: contadorDia, postsMonth: contadorMes, platform: 'LATAM' };
     } catch (error) {
-        console.error(`❌ [LATAM] Erro:`, error.message);
         return { postsToday: 0, postsMonth: 0, platform: 'LATAM' };
     }
 }
@@ -182,6 +204,7 @@ module.exports = {
     fetchBBTopics,
     fetchGeneralStats,
     fetchLatamUserStats,
+    fetchLatamTopics,
 };
 
 function getCurrentDateInSP() {

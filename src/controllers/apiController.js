@@ -4,13 +4,23 @@ const topicCacheService = require("../services/topicCacheService");
 
 exports.getTopics = async (req, res) => {
     try {
-        const topicsWithStatus = topicCacheService.getMergedTopicsWithStatus();
+        
+        const topicsWithStatus = topicCacheService.getBRTopicsWithStatus();
         res.json(topicsWithStatus);
     } catch (error) {
         console.error("Erro no controller getTopics:", error.message);
-        res.status(500).json({
-            message: "Falha ao processar dados dos tópicos.",
-        });
+        res.status(500).json({ message: "Falha ao processar dados dos tópicos BR." });
+    }
+};
+
+exports.getLatamTopics = async (req, res) => {
+    try {
+        
+        const topicsWithStatus = topicCacheService.getLatamTopicsWithStatus();
+        res.json(topicsWithStatus);
+    } catch (error) {
+        console.error("Erro no controller getLatamTopics:", error.message);
+        res.status(500).json({ message: "Falha ao processar dados dos tópicos LATAM." });
     }
 };
 

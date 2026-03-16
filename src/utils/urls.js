@@ -15,6 +15,7 @@ module.exports = {
     USER_STATS_URL: (username) => `${BASE_URL}/user/${username}/actions`,
     PROFILE_URL: (username) => `${BASE_URL}/user/${username}`,
 
-    // LATAM
+    // Mapeamentos da LATAM
     LATAM_USER_STATS_URL: (username) => `${LATAM_BASE_URL}/user/${username}/actions`,
+    LATAM_PAGE_URL: (page) => `${LATAM_BASE_URL}/forum/sem-resposta/${page}`, // <-- Era essa mocinha que estava faltando!
 };

@@ -25,21 +25,17 @@ async function loginAndGetCookie() {
     try {
         page.on('error', err => {});
         page.on('pageerror', err => {});
-
         page.setDefaultNavigationTimeout(60000);
         page.setDefaultTimeout(30000);
 
         console.log("🌎 [LATAM] Acessando formulário...");
-    
         await page.goto(URLS.LATAM_BASE_URL + "/loginForm", { waitUntil: "domcontentloaded" });
-        
         await page.waitForSelector("#login-email", { visible: true });
         
         await page.type("#login-email", process.env.ALURA_LATAM_USER);
         await page.type("#password", process.env.ALURA_LATAM_PASSWORD);
         
         console.log("⏳ [LATAM] Autenticando...");
-
         await page.keyboard.press("Enter");
 
         console.log("⏳ [LATAM] Aguardando redirecionamentos seguros...");
@@ -51,10 +47,9 @@ async function loginAndGetCookie() {
                 const currentUrl = page.url();
                 if (currentUrl.includes("dashboard") || currentUrl.includes("user")) {
                     isLogged = true;
-                    break; 
+                    break;
                 }
             } catch (e) {
-        
             }
         }
 
@@ -73,6 +68,9 @@ async function loginAndGetCookie() {
 
         console.log("✅ [LATAM] Cookies capturados com sucesso!");
         cachedCookie = cookieString;
+        
+        cookieValidUntil = Date.now() + (5 * 60 * 1000); 
+        
         return cookieString;
 
     } catch (error) {
@@ -85,7 +83,7 @@ async function loginAndGetCookie() {
 
 async function isCookieValid(cookie) {
     try {
-        const response = await axios.get(URLS.LATAM_BASE_URL + "/dashboard", {
+        const response = await axios.get(URLS.LATAM_BASE_URL + "/dashboard?_t=" + Date.now(), {
             headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0" },
             maxRedirects: 0,
             validateStatus: (status) => status === 200 || status === 302,
@@ -103,11 +101,12 @@ async function getValidCookie() {
     if (cachedCookie) {
         const valido = await isCookieValid(cachedCookie);
         if (valido) {
-            cookieValidUntil = now + 5 * 60 * 1000;
+            cookieValidUntil = now + 5 * 60 * 1000; 
             return cachedCookie;
         } else {
             console.log("⚠️ [LATAM] Cookie expirado, gerando um novo login...");
             cachedCookie = null;
+            cookieValidUntil = 0;
         }
     }
     

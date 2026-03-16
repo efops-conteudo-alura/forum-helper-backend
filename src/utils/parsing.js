@@ -37,12 +37,13 @@ function parseUserStats($, hoje) {
     return { contadorDia, contadorMes };
 }
 
-function parseExtractTopicsFromPage($) {
+function parseExtractTopicsFromPage($, baseUrl = URLS.BASE_URL) {
     const topicsList = [];
 
     $("li.forumList-item").each((index, element) => {
         const title = $(element).find("h2.forumList-item-subject-info-title a").text().trim();
-        const link = URLS.BASE_URL + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
+        // Concatena com a Base URL certa (BR ou LATAM)
+        const link = baseUrl + $(element).find("h2.forumList-item-subject-info-title a").attr("href");
         const category = $(element).find("a.topic-breadCrumb-item-link").first().text().trim();
         const daysText = $(element).find(".forumList-item-info-updatedAt").text().trim();
 

@@ -6,87 +6,36 @@ const BB_TOPICS_INTERVAL = 300000;
 
 let generalTopicsCache = [];
 let bbTopicsCache = [];
+let latamTopicsCache = [];
 
 function parseDaysTextToMinutes(daysText) {
-    if (!daysText || daysText === "") {
-        return 9999999;
-    }
+    if (!daysText || daysText === "") return 9999999;
 
     const text = daysText.toLowerCase();
-    const match = text.match(/(\d+)\s+(minuto|hora|dia|semana|mês|ano)s?/);
+    
+    const match = text.match(/(\d+)\s+(min|hor|di|d.a|sem|m.s|an|a.o)/i);
 
-    if (!match) {
-        return 9999998;
-    }
+    if (!match) return 9999998;
 
     const value = parseInt(match[1], 10);
     const unit = match[2];
 
-    switch (unit) {
-        case "minuto":
-            return value;
-        case "hora":
-            return value * 60;
-        case "dia":
-            return value * 60 * 24;
-        case "semana":
-            return value * 60 * 24 * 7;
-        case "mês": // Aproximado
-            return value * 60 * 24 * 30;
-        case "ano": // Aproximado
-            return value * 60 * 24 * 365;
-        default:
-            return 9999997;
-    }
+    if (unit.startsWith('min')) return value;
+    if (unit.startsWith('hor')) return value * 60;
+    if (unit.startsWith('di') || unit.startsWith('d.a')) return value * 60 * 24;
+    if (unit.startsWith('sem')) return value * 60 * 24 * 7;
+    if (unit.startsWith('m')) return value * 60 * 24 * 30; // mês / mes
+    if (unit.startsWith('an') || unit.startsWith('a.o')) return value * 60 * 24 * 365; // ano / año
+
+    return 9999997;
 }
 
-async function updateGeneralTopics() {
-    console.log("[Worker Geral] Buscando tópicos gerais...");
-    try {
-        const topics = await scraperService.fetchAllTopics();
-        generalTopicsCache = topics;
-        console.log(`[Worker Geral] Cache atualizado com ${topics.length} tópicos.`);
-    } catch (error) {
-        console.error("[Worker Geral] Erro ao buscar tópicos:", error.message);
-    } finally {
-        setTimeout(updateGeneralTopics, GENERAL_TOPICS_INTERVAL);
-    }
-}
-
-async function updateBBTopics() {
-    console.log("[Worker BB] Buscando tópicos do Banco do Brasil...");
-    try {
-        const topics = await scraperService.fetchBBTopics();
-        bbTopicsCache = topics;
-        console.log(`[Worker BB] Cache atualizado com ${topics.length} tópicos.`);
-    } catch (error) {
-        console.error("[Worker BB] Erro ao buscar tópicos do BB:", error.message);
-    } finally {
-        setTimeout(updateBBTopics, BB_TOPICS_INTERVAL);
-    }
-}
-
-exports.startTopicWorkers = () => {
-    console.log("Iniciando workers de tópicos...");
-    setTimeout(updateGeneralTopics, 0);
-    setTimeout(updateBBTopics, 0);
-};
-
-exports.getMergedTopicsWithStatus = () => {
-    const uniqueTopicsMap = new Map();
-    [...generalTopicsCache, ...bbTopicsCache].forEach((topic) => {
-        uniqueTopicsMap.set(topic.link, topic);
-    });
-
-    const allTopics = Array.from(uniqueTopicsMap.values());
-
-    allTopics.sort((a, b) => {
-        const minutesA = parseDaysTextToMinutes(a.daysText);
-        const minutesB = parseDaysTextToMinutes(b.daysText);
-        return minutesA - minutesB;
-    });
-
-    const liveTopicLinks = new Set(allTopics.map((t) => t.link));
+function pruneGhostClaims() {
+    const liveTopicLinks = new Set([
+        ...generalTopicsCache.map((t) => t.link),
+        ...bbTopicsCache.map((t) => t.link),
+        ...latamTopicsCache.map((t) => t.link)
+    ]);
 
     let prunedCount = 0;
     for (const claimedLink of claimedTopics.keys()) {
@@ -96,22 +45,81 @@ exports.getMergedTopicsWithStatus = () => {
         }
     }
     if (prunedCount > 0) {
-        console.log(
-            `[getTopics] Limpeza: Removidos ${prunedCount} tópicos fantasma (já respondidos).`
-        );
+        console.log(`[Cache] Limpeza: Removidos ${prunedCount} tópicos fantasma.`);
     }
+}
 
-    const topicsWithStatus = allTopics.map((topic) => {
+async function updateGeneralTopics() {
+    console.log("[Worker Geral] Buscando tópicos BR...");
+    try {
+        generalTopicsCache = await scraperService.fetchAllTopics();
+        console.log(`[Worker Geral] Cache BR atualizado com ${generalTopicsCache.length} tópicos.`);
+        pruneGhostClaims();
+    } catch (error) {
+        console.error("[Worker Geral] Erro:", error.message);
+    } finally {
+        setTimeout(updateGeneralTopics, GENERAL_TOPICS_INTERVAL);
+    }
+}
+
+async function updateLatamTopics() {
+    console.log("[Worker LATAM] Buscando tópicos LATAM...");
+    try {
+        latamTopicsCache = await scraperService.fetchLatamTopics();
+        console.log(`[Worker LATAM] Cache LATAM atualizado com ${latamTopicsCache.length} tópicos.`);
+        pruneGhostClaims();
+    } catch (error) {
+        console.error("[Worker LATAM] Erro:", error.message);
+    } finally {
+        setTimeout(updateLatamTopics, GENERAL_TOPICS_INTERVAL);
+    }
+}
+
+async function updateBBTopics() {
+    console.log("[Worker BB] Buscando tópicos Banco do Brasil...");
+    try {
+        bbTopicsCache = await scraperService.fetchBBTopics();
+        console.log(`[Worker BB] Cache BB atualizado com ${bbTopicsCache.length} tópicos.`);
+        pruneGhostClaims();
+    } catch (error) {
+        console.error("[Worker BB] Erro:", error.message);
+    } finally {
+        setTimeout(updateBBTopics, BB_TOPICS_INTERVAL);
+    }
+}
+
+exports.startTopicWorkers = () => {
+    console.log("Iniciando workers de tópicos...");
+    setTimeout(updateGeneralTopics, 0);
+    setTimeout(updateBBTopics, 0);
+    setTimeout(updateLatamTopics, 0);
+};
+
+function formatTopicsForResponse(topicsArray) {
+    const uniqueTopicsMap = new Map();
+    topicsArray.forEach((topic) => uniqueTopicsMap.set(topic.link, topic));
+
+    const allTopics = Array.from(uniqueTopicsMap.values());
+
+    allTopics.sort((a, b) => parseDaysTextToMinutes(a.daysText) - parseDaysTextToMinutes(b.daysText));
+
+    return allTopics.map((topic) => {
         if (claimedTopics.has(topic.link)) {
             return {
                 ...topic,
                 isClaimed: true,
                 claimedBy: claimedTopics.get(topic.link),
             };
-        } else {
-            return { ...topic, isClaimed: false };
         }
+        return { ...topic, isClaimed: false };
     });
+}
 
-    return topicsWithStatus;
+
+exports.getBRTopicsWithStatus = () => {
+    return formatTopicsForResponse([...generalTopicsCache, ...bbTopicsCache]);
+};
+
+exports.getLatamTopicsWithStatus = () => {
+    return formatTopicsForResponse([...latamTopicsCache]);
 };
