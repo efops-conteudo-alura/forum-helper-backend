@@ -13,6 +13,7 @@ function parseDaysTextToMinutes(daysText) {
 
     const text = daysText.toLowerCase();
     
+    
     const match = text.match(/(\d+)\s+(min|hor|di|d.a|sem|m.s|an|a.o)/i);
 
     if (!match) return 9999998;
@@ -24,8 +25,8 @@ function parseDaysTextToMinutes(daysText) {
     if (unit.startsWith('hor')) return value * 60;
     if (unit.startsWith('di') || unit.startsWith('d.a')) return value * 60 * 24;
     if (unit.startsWith('sem')) return value * 60 * 24 * 7;
-    if (unit.startsWith('m')) return value * 60 * 24 * 30; // mês / mes
-    if (unit.startsWith('an') || unit.startsWith('a.o')) return value * 60 * 24 * 365; // ano / año
+    if (unit.startsWith('m')) return value * 60 * 24 * 30; 
+    if (unit.startsWith('an') || unit.startsWith('a.o')) return value * 60 * 24 * 365;
 
     return 9999997;
 }
