@@ -13,8 +13,7 @@ function parseUserStats($, hoje) {
 
         const isForumResponse = 
             actionText === "Resposta a tópico do fórum" || 
-            actionText === "Respuesta a tópico del foro" ||
-            actionText === "Tópico solucionado";
+            actionText === "Respuesta a tópico del foro";
 
         if (isForumResponse) {
             const actionTimestamp = $(element)
