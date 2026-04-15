@@ -1,11 +1,8 @@
 require("dotenv").config();
+const app = require("./src/app"); 
 
-require("./src/services/aiService");
-
-const app = require("./src/app");
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080; 
 
 app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta http://localhost:${PORT}`);
+    console.log(`Servidor rodando na porta: ${PORT}`);
 });
