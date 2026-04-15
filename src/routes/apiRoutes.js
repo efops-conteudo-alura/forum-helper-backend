@@ -5,6 +5,10 @@ const apiController = require("../controllers/apiController");
 router.get("/topics", apiController.getTopics);               // Fórum BR
 router.get("/topics/latam", apiController.getLatamTopics);    // Fórum LATAM
 
+router.get("/rescue-queue", apiController.getRescueQueue);
+router.post("/rescue-claim", apiController.claimRescueTopic);
+router.post("/rescue-unclaim", apiController.unclaimRescueTopic);
+
 router.post("/claim", apiController.claimTopic);
 router.post("/unclaim", apiController.unclaimTopic);
 

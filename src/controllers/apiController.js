@@ -1,6 +1,7 @@
 const claimedTopics = require("../state");
 const scraperService = require("../services/scraperService");
 const topicCacheService = require("../services/topicCacheService");
+const aiService = require("../services/aiService");
 
 exports.getTopics = async (req, res) => {
     try {
@@ -253,5 +254,47 @@ exports.getLatamUserStats = async (req, res) => {
     } catch (error) {
         console.error(`Erro LATAM Controller:`, error.message);
         res.status(500).json({ message: "Falha ao processar dados LATAM." });
+    }
+};
+
+// --- CONTROLLERS DA FILA DE RESGATE (IA) ---
+exports.getRescueQueue = (req, res) => {
+    try {
+        const aiService = require('../services/aiService'); // Garante a importação
+        const queueData = aiService.getRescueQueueData();
+        res.status(200).json(queueData);
+    } catch (error) {
+        console.error("Erro no controller getRescueQueue:", error.message);
+        res.status(500).json({ message: "Falha ao processar a Fila de Resgate." });
+    }
+};
+
+exports.claimRescueTopic = (req, res) => {
+    const { topic_id, username, avatar } = req.body;
+    
+    if (!topic_id || !username) {
+        return res.status(400).json({ message: "Dados incompletos." });
+    }
+
+    const aiService = require('../services/aiService');
+    // Grava o usuário e a foto direto no nosso JSON!
+    const success = aiService.claimRescueTopic(topic_id, { name: username, avatar: avatar });
+    
+    if (success) {
+        res.status(200).json({ message: "Tópico assumido com sucesso!" });
+    } else {
+        res.status(404).json({ message: "Tópico não encontrado na esteira." });
+    }
+};
+
+exports.unclaimRescueTopic = (req, res) => {
+    const { topic_id } = req.body;
+    const aiService = require('../services/aiService');
+    
+    const success = aiService.unclaimRescueTopic(topic_id);
+    if (success) {
+        res.status(200).json({ message: "Tópico liberado." });
+    } else {
+        res.status(404).json({ message: "Tópico não encontrado." });
     }
 };
