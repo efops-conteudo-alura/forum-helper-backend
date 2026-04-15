@@ -12,6 +12,4 @@ app.use("/api", apiRoutes);
 
 topicCacheService.startTopicWorkers();
 
-require("./services/aiService");
-
 module.exports = app;
