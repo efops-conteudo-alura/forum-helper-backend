@@ -3,7 +3,6 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 
-// --- SISTEMA DE PERSISTÊNCIA EM DISCO ---
 const CACHE_FILE = path.join(__dirname, '../../data/rescue_cache.json');
 
 let rescueCache = new Map();
@@ -36,14 +35,12 @@ function saveCache() {
 
 loadCache();
 
-// --- Integração Profissional com CLAUDE 3.5 HAIKU ---
 async function avaliarThreadComIA(threadTexto, subject) {
     const API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!API_KEY) return { sucesso: false, erro: "Sem chave da Anthropic." };
 
     const API_URL = 'https://api.anthropic.com/v1/messages';
 
-    // Usamos tags XML (<titulo>, <thread>) porque o Claude foi treinado para entendê-las perfeitamente
     const systemPrompt = `
 Você é um analista de suporte educacional sênior da Alura avaliando fóruns de tecnologia.
 Sua tarefa é ler a dúvida de um aluno e a thread de respostas, decidindo se a equipe oficial (instrutores/monitores) precisa intervir para salvar o tópico.
@@ -84,7 +81,7 @@ ${threadTexto ? threadTexto.substring(0, 4000) : 'Sem texto.'}
         const response = await axios.post(API_URL, {
             model: "claude-3-5-haiku-20241022",
             max_tokens: 300,
-            temperature: 0.1, // Super baixo para evitar alucinações e garantir o JSON
+            temperature: 0.1,
             system: systemPrompt,
             messages: [
                 { role: "user", content: userMessage }
@@ -99,7 +96,6 @@ ${threadTexto ? threadTexto.substring(0, 4000) : 'Sem texto.'}
 
         let textResponse = response.data.content[0].text.trim();
 
-        // Blindagem clássica contra markdowns fujões
         textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
 
         return { sucesso: true, dados: JSON.parse(textResponse) };
@@ -111,7 +107,6 @@ ${threadTexto ? threadTexto.substring(0, 4000) : 'Sem texto.'}
     }
 }
 
-// --- WORKER: Busca do BI ---
 async function fetchFromBIAndQueue() {
     const biUrl = "https://bi.caelumalura.com.br/public/result?id=6a0650d8-31f5-11f1-834e-02001701fe60".trim();
     const results = [];
@@ -134,7 +129,6 @@ async function fetchFromBIAndQueue() {
                 topicosDoMes.forEach(row => {
                     const id = parseInt(row.topic_id);
                     if (id && !rescueCache.has(id) && !waitingQueue.some(t => t.topic_id === id)) {
-                        // Injetamos o contador de tentativas da Dead Letter Queue
                         waitingQueue.push({ ...row, topic_id: id, tentativas_ia: 0 });
                         novos++;
                     }
@@ -147,12 +141,10 @@ async function fetchFromBIAndQueue() {
     }
 }
 
-// --- WORKER: A Esteira Resiliente ---
 async function processQueue() {
     if (isProcessingQueue || waitingQueue.length === 0) return;
     isProcessingQueue = true;
 
-    // Remove o primeiro da fila (nós vamos recolocar se falhar)
     const topic = waitingQueue.shift();
     topic.tentativas_ia = (topic.tentativas_ia || 0) + 1;
 
@@ -161,7 +153,6 @@ async function processQueue() {
     const analise = await avaliarThreadComIA(topic.thread_texto_ia, topic.subject);
 
     if (analise.sucesso) {
-        // Deu tudo certo!
         rescueCache.set(topic.topic_id, {
             ...topic,
             total_interacoes_alunos: parseInt(topic.total_interacoes_alunos) || 0,
@@ -173,13 +164,11 @@ async function processQueue() {
         console.log(`[AI Worker] ✅ Sucesso! Tópico salvo.`);
 
     } else {
-        // Falhou! O que fazer?
         if (topic.tentativas_ia < 3) {
             console.log(`[AI Worker] ⚠️ Erro na IA. Devolvendo tópico para o fim da fila.`);
-            waitingQueue.push(topic); // Vai pro final da fila para não travar os outros
+            waitingQueue.push(topic);
         } else {
             console.log(`[AI Worker] 🛑 Tópico descartado após 3 falhas. Movendo para analisados com status de Erro.`);
-            // Aborta e salva como ERRO para o Front-end mostrar e a esteira seguir a vida
             rescueCache.set(topic.topic_id, {
                 ...topic,
                 total_interacoes_alunos: parseInt(topic.total_interacoes_alunos) || 0,
@@ -201,12 +190,10 @@ async function processQueue() {
 
 setInterval(fetchFromBIAndQueue, 10 * 60 * 1000);
 
-// A API da Anthropic suporta limites melhores, podemos processar a cada 3 segundos
 setInterval(processQueue, 3000);
 
 fetchFromBIAndQueue();
 
-// --- EXPORTAÇÕES ---
 function getRescueQueueData() {
     return {
         topics: Array.from(rescueCache.values()),
