@@ -118,6 +118,80 @@ A API estará rodando em: `http://localhost:3000/api`
 
 ---
 
+## 📌 Atividades (CRUD)
+
+### Modelo
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `id` | `INTEGER` (auto incremento) | Identificador único |
+| `nome` | `STRING` (obrigatório, 3-255 caracteres) | Nome da atividade |
+| `data` | `DATEONLY` (obrigatório) | Data da atividade |
+| `responsaveis` | `ARRAY<STRING>` (obrigatório, mínimo 1) | Responsáveis pela atividade |
+| `peso` | `INTEGER` (obrigatório, 1 a 3) | Prioridade da atividade |
+
+### Endpoints
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `GET` | `/api/atividades` | Lista todas as atividades |
+| `GET` | `/api/atividades/:id` | Busca atividade por ID |
+| `POST` | `/api/atividades` | Cria uma nova atividade |
+| `PUT` | `/api/atividades/:id` | Atualiza uma atividade existente |
+| `DELETE` | `/api/atividades/:id` | Exclui uma atividade |
+
+### Exemplos de requisição
+
+#### `POST /api/atividades`
+
+```json
+{
+  "nome": "Revisão de tópicos pendentes",
+  "data": "2026-05-14",
+  "responsaveis": ["Victor", "Armano"],
+  "peso": 3
+}
+```
+
+#### `PUT /api/atividades/:id`
+
+```json
+{
+  "nome": "Revisão de tópicos pendentes (atualizado)",
+  "peso": 2
+}
+```
+
+### Exemplos de resposta
+
+#### `GET /api/atividades`
+
+```json
+[
+  {
+    "id": 1,
+    "nome": "Revisão de tópicos pendentes",
+    "data": "2026-05-14",
+    "responsaveis": ["Victor", "Armano"],
+    "peso": 3,
+    "data_criacao": "2026-05-13T20:00:00.000Z",
+    "data_atualizacao": "2026-05-13T20:00:00.000Z"
+  }
+]
+```
+
+### Filtros na listagem
+
+| Parâmetro | Tipo | Exemplo |
+|---|---|---|
+| `peso` | `INTEGER` (1-3) | `?peso=3` |
+| `dataInicio` | `DATE` (ISO) | `?dataInicio=2026-01-01` |
+| `dataFim` | `DATE` (ISO) | `?dataFim=2026-12-31` |
+
+> **Exemplo completo:** `GET /api/atividades?peso=1&dataInicio=2026-01-01&dataFim=2026-12-31`
+
+---
+
 ## 🤝 Autores
 
 <table>
