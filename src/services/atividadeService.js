@@ -5,9 +5,9 @@ class AtividadeService {
     const where = {};
     if (filtros.peso) where.peso = filtros.peso;
     if (filtros.dataInicio && filtros.dataFim) {
-      where.data = { [require('sequelize').Op.between]: [filtros.dataInicio, filtros.dataFim] };
+      where.data_inicio = { [require('sequelize').Op.between]: [filtros.dataInicio, filtros.dataFim] };
     }
-    return Atividade.findAll({ where, order: [['data', 'DESC']] });
+    return Atividade.findAll({ where, order: [['data_inicio', 'DESC']] });
   }
 
   async buscarPorId(id) {

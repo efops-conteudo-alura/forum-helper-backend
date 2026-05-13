@@ -18,11 +18,23 @@ Atividade.init(
         len: { args: [3, 255], msg: 'O nome deve ter entre 3 e 255 caracteres' },
       },
     },
-    data: {
+    data_inicio: {
       type: DataTypes.DATEONLY,
       allowNull: false,
       validate: {
-        isDate: { msg: 'Data inválida' },
+        isDate: { msg: 'Data de início inválida' },
+      },
+    },
+    data_fim: {
+      type: DataTypes.DATEONLY,
+      allowNull: false,
+      validate: {
+        isDate: { msg: 'Data de fim inválida' },
+        isAfterInicio(value) {
+          if (this.data_inicio && value < this.data_inicio) {
+            throw new Error('A data de fim deve ser posterior ou igual à data de início');
+          }
+        },
       },
     },
     responsaveis: {
