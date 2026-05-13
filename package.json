@@ -18,9 +18,13 @@
         "csv-parser": "^3.2.0",
         "dotenv": "^17.2.2",
         "express": "^5.1.0",
-        "puppeteer": "^24.21.0"
+        "pg": "^8.20.0",
+        "pg-hstore": "^2.3.4",
+        "puppeteer": "^24.21.0",
+        "sequelize": "^6.37.8"
     },
     "devDependencies": {
-        "prettier": "^3.8.1"
+        "prettier": "^3.8.1",
+        "sequelize-cli": "^6.6.5"
     }
 }
