@@ -35,6 +35,38 @@ function saveCache() {
 
 loadCache();
 
+function cleanupOldTopics() {
+    const agora = Date.now();
+    const UM_DIA_MS = 24 * 60 * 60 * 1000;
+    const SETE_DIAS_MS = 7 * UM_DIA_MS;
+    let removidos = 0;
+
+    for (const [id, topic] of rescueCache) {
+        const createdAt = new Date(topic.topic_createdAt?.replace(" ", "T")).getTime();
+        if (isNaN(createdAt)) continue;
+
+        const idade = agora - createdAt;
+
+        if (topic.rescue_status === "ERROR" && idade > UM_DIA_MS) {
+            rescueCache.delete(id);
+            removidos++;
+        } else if (
+            ["PENDING", "CLAIMED"].includes(topic.rescue_status) &&
+            idade > SETE_DIAS_MS
+        ) {
+            rescueCache.delete(id);
+            removidos++;
+        }
+    }
+
+    if (removidos > 0) {
+        console.log(`[AI Service] 🧹 Limpeza: ${removidos} tópicos antigos removidos.`);
+        saveCache();
+    }
+}
+
+setInterval(cleanupOldTopics, 60 * 60 * 1000);
+
 async function avaliarThreadComIA(threadTexto, subject) {
     const API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!API_KEY) return { sucesso: false, erro: "Sem chave da Anthropic." };
